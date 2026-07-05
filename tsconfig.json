@@ -1,0 +1,106 @@
+{
+  "extends": "expo/tsconfig.base",
+  "compilerOptions": {
+    "strict": true,
+    "baseUrl": "http://localhost:500",
+    "paths": {
+      "@/*": [
+        "./*"
+      ],
+      "@components/*": [
+        "components/*"
+      ],
+      "@screens/*": [
+        "app/*"
+      ],
+      "@services/*": [
+        "services/*"
+      ],
+      "@stores/*": [
+        "stores/*"
+      ],
+      "@hooks/*": [
+        "hooks/*"
+      ],
+      "@utils/*": [
+        "utils/*"
+      ],
+      "@constants/*": [
+        "constants/*"
+      ],
+      "@types/*": [
+        "types/*"
+      ]
+    },
+    "jsx": "react-native"
+  },
+  "include": [
+    "**/*.ts",
+    "**/*.tsx",
+    "components/detail/TransactionDetailView.jsx",
+    "services/cacheService.js",
+    "components/ui/FilterChips.jsx",
+    "components/ui/StatusBadge.jsx",
+    "components/ui/SearchBar.jsx",
+    "components/ui/Avatar.jsx",
+    "components/ui/Chip.jsx",
+    "utils/errorHandler.js",
+    "context/AuthContext.jsx",
+    "context/ThemeContext.jsx",
+    "hooks/useWebSocket.js",
+    "hooks/usePagination.js",
+    "hooks/useDebounce.js",
+    "stores/userStore.js",
+    "stores/storeStore.js",
+    "stores/productStore.js",
+    "stores/transactionStore.js",
+    "hooks/useFilter.js",
+    "components/permission-guard.jsx",
+    "utils/classNames.js",
+    "utils/dateUtils.js",
+    "services/authService.js",
+    "components/qr/QRGenerator.jsx",
+    "components/qr/QRScanner.jsx",
+    "components/ui/Divider.jsx",
+    "components/ui/SectionHeader.jsx",
+    "components/ui/EmptyState.jsx",
+    "components/ui/LoadingSpinner.jsx",
+    "components/ui/Pagination.jsx",
+    "components/ui/Icon.jsx",
+    "components/cards/ProductCard.jsx",
+    "app/(stacks)/inventory/[productId]/adjust.jsx",
+    "app/(admin)/audit-logs/index.jsx",
+    "components/ui/index.js",
+    "app/(stacks)/transactions/[id]/detail.jsx",
+    "components/index.js",
+    "components/qr/index.js",
+    "components/cards/TransactionCard.jsx",
+    "components/detail/index.js",
+    "components/cards/index.js",
+    "components/print/index.js",
+    "utils/index.js",
+    "constants/index.js",
+    "services/index.js",
+    "hooks/index.js",
+    "stores/index.js",
+    "app/(app)/(stacks)/users/[id]/detail.jsx",
+    "app/(app)/(stacks)/users/index.jsx",
+    "app/(app)/(stacks)/transactions/[id]/index.jsx",
+    "app/(app)/(stacks)/stores/[id]/detail.jsx",
+    "app/(app)/(stacks)/stores/index.jsx",
+    "app/(app)/(stacks)/receipts/[id]/index.jsx",
+    "app/(app)/(stacks)/receipts/index.jsx",
+    "app/(app)/(stacks)/products/[id]/index.jsx",
+    "app/(app)/(stacks)/payments/[id]/refund.jsx",
+    "app/(app)/(stacks)/payments/[id]/detail.jsx",
+    "app/(app)/(stacks)/payments/index.jsx",
+    "app/(app)/(stacks)/notifications/index.jsx",
+    "app/(app)/(stacks)/inventory/[productId]/detail.jsx"
+  ],
+  "exclude": [
+    "node_modules",
+    "babel.config.js",
+    "metro.config.js",
+    "jest.config.js"
+  ]
+}
