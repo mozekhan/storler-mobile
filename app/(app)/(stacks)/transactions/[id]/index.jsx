@@ -1,252 +1,3 @@
-// import React, { useEffect, useState } from "react";
-// import { View, ScrollView, StyleSheet, Text, RefreshControl } from "react-native";
-// import { useLocalSearchParams, useNavigation } from "expo-router";
-// import {
-//   Card,
-//   Badge,
-//   Divider,
-//   Chip,
-//   LoadingSpinner,
-// } from "../../../../../components/ui";
-// import TransactionDetailView from "../../../../../components/detail/TransactionDetailView";
-// import useTransactionStore from "../../../../../stores/transactionStore";
-// import { formatCurrency, formatDate } from "../../../../../utils/formatters";
-// import { Colors } from "../../../../../constants/theme";
-
-// export default function TransactionDetailScreen() {
-//   const { id } = useLocalSearchParams();
-//   const navigation = useNavigation();
-//   const { fetchTransaction, currentTransaction, isLoading } =
-//     useTransactionStore();
-//   const [refreshing, setRefreshing] = useState(false);
-
-//   useEffect(() => {
-//     if (id) {
-//       fetchTransaction(id);
-//       navigation.setOptions({ title: `Transaction #${id.slice(-6)}` });
-//     }
-//   }, [id]);
-
-//   const onRefresh = async () => {
-//     setRefreshing(true);
-//     await fetchTransaction(id, true);
-//     setRefreshing(false);
-//   };
-
-//   if (isLoading && !currentTransaction) {
-//     return <LoadingSpinner />;
-//   }
-
-//   if (!currentTransaction) {
-//     return (
-//       <View style={styles.emptyContainer}>
-//         <Text>Transaction not found</Text>
-//       </View>
-//     );
-//   }
-
-//   const transaction = currentTransaction;
-
-//   return (
-//     <ScrollView
-//       style={styles.container}
-//       refreshControl={
-//         <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
-//       }
-//     >
-//       <Card style={styles.headerCard}>
-//         <View style={styles.headerRow}>
-//           <Text style={styles.transactionNumber}>
-//             {transaction.transactionNumber}
-//           </Text>
-//           <Badge status={transaction.status}>{transaction.status}</Badge>
-//         </View>
-//         <Text style={styles.date}>{formatDate(transaction.createdAt)}</Text>
-//       </Card>
-
-//       <Card style={styles.sectionCard}>
-//         <Text style={styles.sectionTitle}>Store</Text>
-//         <Text style={styles.storeName}>{transaction.storeId?.name}</Text>
-//         <Text style={styles.storeCode}>Code: {transaction.storeId?.code}</Text>
-//       </Card>
-
-//       <Card style={styles.sectionCard}>
-//         <View style={styles.totalsGrid}>
-//           <View style={styles.totalItem}>
-//             <Text style={styles.totalLabel}>Subtotal</Text>
-//             <Text style={styles.totalValue}>
-//               {formatCurrency(transaction.subtotal)}
-//             </Text>
-//           </View>
-//           <View style={styles.totalItem}>
-//             <Text style={styles.totalLabel}>Tax</Text>
-//             <Text style={styles.totalValue}>
-//               {formatCurrency(transaction.taxTotal)}
-//             </Text>
-//           </View>
-//           <View style={[styles.totalItem, styles.totalHighlight]}>
-//             <Text style={styles.totalLabel}>Total</Text>
-//             <Text style={styles.totalAmount}>
-//               {formatCurrency(transaction.totalAmount)}
-//             </Text>
-//           </View>
-//         </View>
-//       </Card>
-
-//       <Card style={styles.sectionCard}>
-//         <Text style={styles.sectionTitle}>
-//           Items ({transaction.items?.length || 0})
-//         </Text>
-//         {transaction.items?.map((item, index) => (
-//           <View key={index} style={styles.itemRow}>
-//             <View style={styles.itemInfo}>
-//               <Text style={styles.itemName}>{item.name}</Text>
-//               <Text style={styles.itemSku}>SKU: {item.sku}</Text>
-//               <Text style={styles.itemQuantity}>Qty: {item.quantity}</Text>
-//             </View>
-//             <View style={styles.itemPrice}>
-//               <Text style={styles.itemUnitPrice}>
-//                 {formatCurrency(item.unitPrice)}
-//               </Text>
-//               <Text style={styles.itemTotal}>
-//                 {formatCurrency(item.totalPrice)}
-//               </Text>
-//             </View>
-//           </View>
-//         ))}
-//       </Card>
-
-//       <Card style={styles.sectionCard}>
-//         <Text style={styles.sectionTitle}>Staff</Text>
-//         <View style={styles.staffRow}>
-//           <View style={styles.staffItem}>
-//             <Text style={styles.staffLabel}>Sales Attendant</Text>
-//             <Text style={styles.staffName}>
-//               {transaction.salesAttendantId?.firstName}{" "}
-//               {transaction.salesAttendantId?.lastName}
-//             </Text>
-//           </View>
-//           {transaction.financeAttendantId && (
-//             <View style={styles.staffItem}>
-//               <Text style={styles.staffLabel}>Finance Attendant</Text>
-//               <Text style={styles.staffName}>
-//                 {transaction.financeAttendantId?.firstName}{" "}
-//                 {transaction.financeAttendantId?.lastName}
-//               </Text>
-//             </View>
-//           )}
-//           {transaction.warehouseStaffId && (
-//             <View style={styles.staffItem}>
-//               <Text style={styles.staffLabel}>Warehouse Staff</Text>
-//               <Text style={styles.staffName}>
-//                 {transaction.warehouseStaffId?.firstName}{" "}
-//                 {transaction.warehouseStaffId?.lastName}
-//               </Text>
-//             </View>
-//           )}
-//         </View>
-//       </Card>
-
-//       {transaction.paymentMethod && (
-//         <Card style={styles.sectionCard}>
-//           <Text style={styles.sectionTitle}>Payment</Text>
-//           <View style={styles.paymentGrid}>
-//             <View style={styles.paymentItem}>
-//               <Text style={styles.paymentLabel}>Method</Text>
-//               <Chip>{transaction.paymentMethod}</Chip>
-//             </View>
-//             <View style={styles.paymentItem}>
-//               <Text style={styles.paymentLabel}>Amount Paid</Text>
-//               <Text>{formatCurrency(transaction.amountPaid)}</Text>
-//             </View>
-//             {transaction.changeAmount > 0 && (
-//               <View style={styles.paymentItem}>
-//                 <Text style={styles.paymentLabel}>Change</Text>
-//                 <Text style={styles.changeText}>
-//                   {formatCurrency(transaction.changeAmount)}
-//                 </Text>
-//               </View>
-//             )}
-//           </View>
-//         </Card>
-//       )}
-
-//       <Card style={styles.sectionCard}>
-//         <Text style={styles.sectionTitle}>Audit Trail</Text>
-//         {transaction.auditTrail?.slice(0, 3).map((entry, index) => (
-//           <View key={index} style={styles.auditEntry}>
-//             <Text style={styles.auditAction}>{entry.action}</Text>
-//             <Text style={styles.auditTime}>{formatDate(entry.timestamp)}</Text>
-//           </View>
-//         ))}
-//         {transaction.auditTrail?.length > 3 && (
-//           <Text style={styles.viewMore}>
-//             + {transaction.auditTrail.length - 3} more
-//           </Text>
-//         )}
-//       </Card>
-//     </ScrollView>
-//   );
-// }
-
-// const styles = StyleSheet.create({
-//   container: { flex: 1, backgroundColor: Colors.background },
-//   emptyContainer: { flex: 1, justifyContent: "center", alignItems: "center" },
-//   headerCard: { margin: 16, marginBottom: 8 },
-//   headerRow: {
-//     flexDirection: "row",
-//     justifyContent: "space-between",
-//     alignItems: "center",
-//   },
-//   transactionNumber: { fontSize: 18, fontWeight: "bold" },
-//   date: { fontSize: 14, color: Colors.gray, marginTop: 4 },
-//   sectionCard: { marginHorizontal: 16, marginVertical: 4 },
-//   sectionTitle: { fontSize: 16, fontWeight: "600", marginBottom: 12 },
-//   totalsGrid: { flexDirection: "row", justifyContent: "space-between" },
-//   totalItem: { flex: 1, alignItems: "center" },
-//   totalHighlight: {
-//     backgroundColor: Colors.primaryLight,
-//     borderRadius: 8,
-//     padding: 8,
-//   },
-//   totalLabel: { fontSize: 12, color: Colors.gray },
-//   totalValue: { fontSize: 16, fontWeight: "500" },
-//   totalAmount: { fontSize: 20, fontWeight: "bold", color: Colors.primary },
-//   itemRow: {
-//     flexDirection: "row",
-//     justifyContent: "space-between",
-//     paddingVertical: 8,
-//     borderBottomWidth: 1,
-//     borderBottomColor: Colors.border,
-//   },
-//   itemInfo: { flex: 1 },
-//   itemName: { fontSize: 14, fontWeight: "500" },
-//   itemSku: { fontSize: 12, color: Colors.gray },
-//   itemQuantity: { fontSize: 12, color: Colors.gray },
-//   itemPrice: { alignItems: "flex-end" },
-//   itemUnitPrice: { fontSize: 12, color: Colors.gray },
-//   itemTotal: { fontSize: 14, fontWeight: "500" },
-//   staffRow: { gap: 8 },
-//   staffItem: { paddingVertical: 4 },
-//   staffLabel: { fontSize: 12, color: Colors.gray },
-//   staffName: { fontSize: 14, fontWeight: "500" },
-//   paymentGrid: { flexDirection: "row", flexWrap: "wrap", gap: 12 },
-//   paymentItem: { minWidth: "45%" },
-//   paymentLabel: { fontSize: 12, color: Colors.gray },
-//   changeText: { color: Colors.success, fontWeight: "600" },
-//   auditEntry: {
-//     flexDirection: "row",
-//     justifyContent: "space-between",
-//     paddingVertical: 4,
-//   },
-//   auditAction: { fontSize: 14 },
-//   auditTime: { fontSize: 12, color: Colors.gray },
-//   viewMore: { fontSize: 14, color: Colors.primary, marginTop: 8 },
-//   storeName: { fontSize: 16, fontWeight: "500" },
-//   storeCode: { fontSize: 14, color: Colors.gray },
-// });
-
-// app/(stacks)/transactions/[id]/detail.jsx
 import React, { useEffect, useState } from "react";
 import {
   View,
@@ -259,9 +10,7 @@ import {
 import { useLocalSearchParams, useRouter } from "expo-router";
 import {
   Card,
-  // Text,
   Badge,
-  Divider,
   Chip,
   LoadingSpinner,
   CustomHeader,
@@ -287,19 +36,19 @@ import {
 export default function TransactionDetailScreen() {
   const { id } = useLocalSearchParams();
   const router = useRouter();
-  const { fetchTransaction, currentTransaction, isLoading } =
+  const { fetchTransactionWithReceipt, currentTransaction, isLoading } =
     useTransactionStore();
   const [refreshing, setRefreshing] = useState(false);
 
   useEffect(() => {
     if (id) {
-      fetchTransaction(id);
+      fetchTransactionWithReceipt(id);
     }
   }, [id]);
 
   const onRefresh = async () => {
     setRefreshing(true);
-    await fetchTransaction(id, true);
+    await fetchTransactionWithReceipt(id);
     setRefreshing(false);
   };
 
@@ -333,6 +82,43 @@ export default function TransactionDetailScreen() {
   }
 
   const transaction = currentTransaction;
+  const receiptData = transaction.receiptData || {};
+  const summary = receiptData.summary || {};
+  const staff = receiptData.staff || {};
+  const timeline = receiptData.timeline || {};
+
+  // Get status from transaction or receipt data
+  const status = transaction.status || "PENDING";
+  const transactionNumber = transaction.transactionNumber || "N/A";
+
+  // Get store info
+  const store = transaction.storeId || {};
+  const storeName = store.name || receiptData?.store?.name || "N/A";
+  const storeCode = store.code || "N/A";
+
+  // Get items from transaction or receipt data
+  const items = transaction.items || receiptData.items || [];
+  const itemsReleased = transaction.itemsReleased || receiptData.releasedItems || [];
+
+  // Get staff info
+  const salesAttendant = staff.salesAttendant || transaction.salesAttendantId || {};
+  const financeAttendant = staff.financeAttendant || transaction.financeAttendantId || null;
+  const warehouseStaff = staff.warehouseStaff || transaction.warehouseStaffId || null;
+
+  const salesAttendantName = salesAttendant.name || 
+    `${salesAttendant.firstName || ''} ${salesAttendant.lastName || ''}`.trim() || "N/A";
+
+  // Get totals
+  const subtotal = transaction.subtotal || summary.subtotal || 0;
+  const taxTotal = transaction.taxTotal || summary.taxTotal || 0;
+  const totalAmount = transaction.totalAmount || summary.totalAmount || 0;
+  const amountPaid = summary.amountPaid || transaction.amountPaid || 0;
+  const changeAmount = summary.changeAmount || transaction.changeAmount || 0;
+  const paymentMethod = summary.paymentMethod || transaction.paymentMethod || "N/A";
+
+  // Get timeline
+  const createdAt = transaction.createdAt || timeline.created || new Date();
+  const auditTrail = transaction.auditTrail || [];
 
   return (
     <ScrollView
@@ -342,14 +128,13 @@ export default function TransactionDetailScreen() {
       }
     >
       <CustomHeader title="Transaction Details" />
+      
       <Card style={styles.headerCard}>
         <View style={styles.headerRow}>
-          <Text style={styles.transactionNumber}>
-            {transaction.transactionNumber}
-          </Text>
-          <Badge status={transaction.status}>{transaction.status}</Badge>
+          <Text style={styles.transactionNumber}>{transactionNumber}</Text>
+          <Badge status={status}>{status}</Badge>
         </View>
-        <Text style={styles.date}>{formatDate(transaction.createdAt)}</Text>
+        <Text style={styles.date}>{formatDate(createdAt)}</Text>
       </Card>
 
       {/* Quick Navigation Grid */}
@@ -365,7 +150,7 @@ export default function TransactionDetailScreen() {
           </View>
           <Text style={styles.quickNavLabel}>Items</Text>
           <Text style={styles.quickNavCount}>
-            {transaction.items?.length || 0}
+            {items.length + itemsReleased.length}
           </Text>
         </TouchableOpacity>
 
@@ -380,7 +165,7 @@ export default function TransactionDetailScreen() {
           </View>
           <Text style={styles.quickNavLabel}>Payments</Text>
           <Text style={styles.quickNavCount}>
-            {transaction.paymentMethod ? "1" : "0"}
+            {paymentMethod !== "N/A" ? "1" : "0"}
           </Text>
         </TouchableOpacity>
 
@@ -394,9 +179,7 @@ export default function TransactionDetailScreen() {
             <FileText size={24} color="#EC4899" />
           </View>
           <Text style={styles.quickNavLabel}>Receipts</Text>
-          <Text style={styles.quickNavCount}>
-            {transaction.receipts?.length || 0}
-          </Text>
+          <Text style={styles.quickNavCount}>●</Text>
         </TouchableOpacity>
 
         <TouchableOpacity
@@ -418,8 +201,8 @@ export default function TransactionDetailScreen() {
 
       <Card style={styles.sectionCard}>
         <Text style={styles.sectionTitle}>Store</Text>
-        <Text style={styles.storeName}>{transaction.storeId?.name}</Text>
-        <Text style={styles.storeCode}>Code: {transaction.storeId?.code}</Text>
+        <Text style={styles.storeName}>{storeName}</Text>
+        <Text style={styles.storeCode}>Code: {storeCode}</Text>
       </Card>
 
       <Card style={styles.sectionCard}>
@@ -427,19 +210,19 @@ export default function TransactionDetailScreen() {
           <View style={styles.totalItem}>
             <Text style={styles.totalLabel}>Subtotal</Text>
             <Text style={styles.totalValue}>
-              {formatCurrency(transaction.subtotal)}
+              {formatCurrency(subtotal)}
             </Text>
           </View>
           <View style={styles.totalItem}>
             <Text style={styles.totalLabel}>Tax</Text>
             <Text style={styles.totalValue}>
-              {formatCurrency(transaction.taxTotal)}
+              {formatCurrency(taxTotal)}
             </Text>
           </View>
           <View style={[styles.totalItem, styles.totalHighlight]}>
             <Text style={styles.totalLabel}>Total</Text>
             <Text style={styles.totalAmount}>
-              {formatCurrency(transaction.totalAmount)}
+              {formatCurrency(totalAmount)}
             </Text>
           </View>
         </View>
@@ -447,32 +230,32 @@ export default function TransactionDetailScreen() {
 
       <Card style={styles.sectionCard}>
         <Text style={styles.sectionTitle}>
-          Items ({transaction.items?.length || 0})
+          Items ({items.length + itemsReleased.length})
         </Text>
-        {transaction.items?.slice(0, 3).map((item, index) => (
+        {[...items, ...itemsReleased].slice(0, 3).map((item, index) => (
           <View key={index} style={styles.itemRow}>
             <View style={styles.itemInfo}>
-              <Text style={styles.itemName}>{item.name}</Text>
-              <Text style={styles.itemSku}>SKU: {item.sku}</Text>
-              <Text style={styles.itemQuantity}>Qty: {item.quantity}</Text>
+              <Text style={styles.itemName}>{item.name || "Item"}</Text>
+              <Text style={styles.itemSku}>SKU: {item.sku || "N/A"}</Text>
+              <Text style={styles.itemQuantity}>Qty: {item.quantity || 0}</Text>
             </View>
             <View style={styles.itemPrice}>
               <Text style={styles.itemUnitPrice}>
-                {formatCurrency(item.unitPrice)}
+                {formatCurrency(item.unitPrice || 0)}
               </Text>
               <Text style={styles.itemTotal}>
-                {formatCurrency(item.totalPrice)}
+                {formatCurrency(item.totalPrice || item.unitPrice * item.quantity || 0)}
               </Text>
             </View>
           </View>
         ))}
-        {(transaction.items?.length || 0) > 3 && (
+        {(items.length + itemsReleased.length) > 3 && (
           <TouchableOpacity
             style={styles.viewMoreButton}
             onPress={navigateToItems}
           >
             <Text style={styles.viewMoreText}>
-              View all {transaction.items.length} items
+              View all {items.length + itemsReleased.length} items
             </Text>
             <ArrowRight size={16} color={Colors.primary} />
           </TouchableOpacity>
@@ -484,49 +267,46 @@ export default function TransactionDetailScreen() {
         <View style={styles.staffRow}>
           <View style={styles.staffItem}>
             <Text style={styles.staffLabel}>Sales Attendant</Text>
-            <Text style={styles.staffName}>
-              {transaction.salesAttendantId?.firstName}{" "}
-              {transaction.salesAttendantId?.lastName}
-            </Text>
+            <Text style={styles.staffName}>{salesAttendantName}</Text>
           </View>
-          {transaction.financeAttendantId && (
+          {financeAttendant && (
             <View style={styles.staffItem}>
               <Text style={styles.staffLabel}>Finance Attendant</Text>
               <Text style={styles.staffName}>
-                {transaction.financeAttendantId?.firstName}{" "}
-                {transaction.financeAttendantId?.lastName}
+                {financeAttendant.name || 
+                  `${financeAttendant.firstName || ''} ${financeAttendant.lastName || ''}`.trim() || "N/A"}
               </Text>
             </View>
           )}
-          {transaction.warehouseStaffId && (
+          {warehouseStaff && (
             <View style={styles.staffItem}>
               <Text style={styles.staffLabel}>Warehouse Staff</Text>
               <Text style={styles.staffName}>
-                {transaction.warehouseStaffId?.firstName}{" "}
-                {transaction.warehouseStaffId?.lastName}
+                {warehouseStaff.name || 
+                  `${warehouseStaff.firstName || ''} ${warehouseStaff.lastName || ''}`.trim() || "N/A"}
               </Text>
             </View>
           )}
         </View>
       </Card>
 
-      {transaction.paymentMethod && (
+      {paymentMethod !== "N/A" && (
         <Card style={styles.sectionCard}>
           <Text style={styles.sectionTitle}>Payment</Text>
           <View style={styles.paymentGrid}>
             <View style={styles.paymentItem}>
               <Text style={styles.paymentLabel}>Method</Text>
-              <Chip>{transaction.paymentMethod}</Chip>
+              <Chip>{paymentMethod}</Chip>
             </View>
             <View style={styles.paymentItem}>
               <Text style={styles.paymentLabel}>Amount Paid</Text>
-              <Text>{formatCurrency(transaction.amountPaid)}</Text>
+              <Text>{formatCurrency(amountPaid)}</Text>
             </View>
-            {transaction.changeAmount > 0 && (
+            {changeAmount > 0 && (
               <View style={styles.paymentItem}>
                 <Text style={styles.paymentLabel}>Change</Text>
                 <Text style={styles.changeText}>
-                  {formatCurrency(transaction.changeAmount)}
+                  {formatCurrency(changeAmount)}
                 </Text>
               </View>
             )}
@@ -536,15 +316,15 @@ export default function TransactionDetailScreen() {
 
       <Card style={styles.sectionCard}>
         <Text style={styles.sectionTitle}>Audit Trail</Text>
-        {transaction.auditTrail?.slice(0, 3).map((entry, index) => (
+        {auditTrail.slice(0, 3).map((entry, index) => (
           <View key={index} style={styles.auditEntry}>
-            <Text style={styles.auditAction}>{entry.action}</Text>
-            <Text style={styles.auditTime}>{formatDate(entry.timestamp)}</Text>
+            <Text style={styles.auditAction}>{entry.action || "Update"}</Text>
+            <Text style={styles.auditTime}>{formatDate(entry.timestamp || new Date())}</Text>
           </View>
         ))}
-        {transaction.auditTrail?.length > 3 && (
+        {auditTrail.length > 3 && (
           <Text style={styles.viewMore}>
-            + {transaction.auditTrail.length - 3} more
+            + {auditTrail.length - 3} more
           </Text>
         )}
       </Card>
@@ -572,7 +352,6 @@ const styles = StyleSheet.create({
   },
   quickNavItem: {
     flex: 1,
-    // minWidth: "45%",
     backgroundColor: Colors.white,
     borderRadius: BorderRadius.lg,
     padding: Spacing.md,

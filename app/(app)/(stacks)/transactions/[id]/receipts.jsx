@@ -1,15 +1,207 @@
-import React, { useState, useEffect } from "react";
+// import React, { useState, useEffect } from "react";
+// import {
+//   View,
+//   Text,
+//   FlatList,
+//   TouchableOpacity,
+//   ActivityIndicator,
+//   StyleSheet,
+// } from "react-native";
+// import { useLocalSearchParams, useRouter } from "expo-router";
+// import { FileText, Eye } from "lucide-react-native";
+// import ReceiptService from "../../../../../services/receiptService";
+// import { formatDate } from "../../../../../utils/formatters";
+// import {
+//   Colors,
+//   Spacing,
+//   Typography,
+//   BorderRadius,
+// } from "../../../../../constants/theme";
+// import CustomHeader from "../../../../../components/ui/CustomHeader";
+
+// export default function TransactionReceipts() {
+//   const { id } = useLocalSearchParams();
+//   const router = useRouter();
+//   const [loading, setLoading] = useState(true);
+//   const [receipts, setReceipts] = useState([]);
+
+//   useEffect(() => {
+//     fetchReceipts();
+//   }, [id]);
+
+//   const fetchReceipts = async () => {
+//     try {
+//       const data = await ReceiptService.getReceiptsByTransaction(id);
+//       setReceipts(data || []);
+//     } catch (error) {
+//       console.error("Failed to fetch receipts:", error);
+//     } finally {
+//       setLoading(false);
+//     }
+//   };
+
+//   const getTypeIcon = (type) => {
+//     const icons = {
+//       SALES: "📄",
+//       PAYMENT: "💰",
+//       INVOICE: "📋",
+//     };
+//     return icons[type] || "📄";
+//   };
+
+//   if (loading) {
+//     return (
+//       <View style={styles.loadingContainer}>
+//         <ActivityIndicator size="large" color={Colors.primary} />
+//       </View>
+//     );
+//   }
+
+//   return (
+//     <View style={styles.container}>
+//       <CustomHeader title="Transaction Receipt" />
+//       <FlatList
+//         style={styles.container}
+//         contentContainerStyle={styles.content}
+//         data={receipts}
+//         keyExtractor={(item) => item._id}
+//         renderItem={({ item }) => (
+//           <TouchableOpacity
+//             style={styles.receiptItem}
+//             onPress={() => router.push(`/receipts/${item._id}`)}
+//           >
+//             <View style={styles.receiptHeader}>
+//               <Text style={styles.receiptIcon}>{getTypeIcon(item.type)}</Text>
+//               <View style={styles.receiptInfo}>
+//                 <Text style={styles.receiptNumber}>{item.receiptNumber}</Text>
+//                 <Text style={styles.receiptType}>{item.type}</Text>
+//               </View>
+//               <View style={styles.receiptActions}>
+//                 <TouchableOpacity
+//                   style={styles.viewButton}
+//                   onPress={() => router.push(`/receipts/${item._id}`)}
+//                 >
+//                   <Eye size={18} color={Colors.primary} />
+//                 </TouchableOpacity>
+//               </View>
+//             </View>
+//             <View style={styles.receiptFooter}>
+//               <Text style={styles.receiptDate}>
+//                 {formatDate(item.createdAt)}
+//               </Text>
+//               <View
+//                 style={[
+//                   styles.statusBadge,
+//                   item.printed ? styles.statusPrinted : styles.statusNotPrinted,
+//                 ]}
+//               >
+//                 <Text
+//                   style={[
+//                     styles.statusText,
+//                     item.printed
+//                       ? styles.statusPrintedText
+//                       : styles.statusNotPrintedText,
+//                   ]}
+//                 >
+//                   {item.printed ? "Printed" : "Not Printed"}
+//                 </Text>
+//               </View>
+//             </View>
+//           </TouchableOpacity>
+//         )}
+//         ListEmptyComponent={() => (
+//           <View style={styles.emptyContainer}>
+//             <FileText size={48} color={Colors.gray300} />
+//             <Text style={styles.emptyText}>No receipts found</Text>
+//           </View>
+//         )}
+//       />
+//     </View>
+//   );
+// }
+
+// const styles = StyleSheet.create({
+//   container: { flex: 1, backgroundColor: Colors.gray50 },
+//   content: { padding: Spacing.md },
+//   loadingContainer: { flex: 1, justifyContent: "center", alignItems: "center" },
+//   receiptItem: {
+//     backgroundColor: Colors.white,
+//     borderRadius: BorderRadius.lg,
+//     padding: Spacing.md,
+//     marginBottom: Spacing.md,
+//   },
+//   receiptHeader: { flexDirection: "row", alignItems: "center" },
+//   receiptIcon: { fontSize: Typography.xl, marginRight: Spacing.md },
+//   receiptInfo: { flex: 1 },
+//   receiptNumber: {
+//     fontSize: Typography.md,
+//     fontWeight: "600",
+//     color: Colors.gray900,
+//   },
+//   receiptType: { fontSize: Typography.sm, color: Colors.gray500 },
+//   receiptActions: { flexDirection: "row" },
+//   viewButton: { padding: Spacing.sm },
+//   receiptFooter: {
+//     flexDirection: "row",
+//     justifyContent: "space-between",
+//     alignItems: "center",
+//     marginTop: Spacing.sm,
+//     paddingTop: Spacing.sm,
+//     borderTopWidth: 1,
+//     borderTopColor: Colors.gray100,
+//   },
+//   receiptDate: { fontSize: Typography.xs, color: Colors.gray400 },
+//   statusBadge: {
+//     paddingHorizontal: Spacing.sm,
+//     paddingVertical: 2,
+//     borderRadius: BorderRadius.sm,
+//   },
+//   statusText: { fontSize: Typography.xs, fontWeight: "500" },
+//   statusPrinted: { backgroundColor: Colors.success + "20" },
+//   statusPrintedText: { color: Colors.success },
+//   statusNotPrinted: { backgroundColor: Colors.warning + "20" },
+//   statusNotPrintedText: { color: Colors.warning },
+//   emptyContainer: { paddingVertical: Spacing["4xl"], alignItems: "center" },
+//   emptyText: { color: Colors.gray500, marginTop: Spacing.sm },
+// });
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+import React from "react";
 import {
   View,
   Text,
   FlatList,
   TouchableOpacity,
-  ActivityIndicator,
   StyleSheet,
 } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { FileText, Eye } from "lucide-react-native";
-import ReceiptService from "../../../../../services/receiptService";
+import { FileText, Eye, Printer, Download } from "lucide-react-native";
+import useTransactionStore from "../../../../../stores/transactionStore";
 import { formatDate } from "../../../../../utils/formatters";
 import {
   Colors,
@@ -22,66 +214,122 @@ import CustomHeader from "../../../../../components/ui/CustomHeader";
 export default function TransactionReceipts() {
   const { id } = useLocalSearchParams();
   const router = useRouter();
-  const [loading, setLoading] = useState(true);
-  const [receipts, setReceipts] = useState([]);
+  const { currentTransaction } = useTransactionStore();
 
-  useEffect(() => {
-    fetchReceipts();
-  }, [id]);
-
-  const fetchReceipts = async () => {
-    try {
-      const data = await ReceiptService.getReceiptsByTransaction(id);
-      setReceipts(data || []);
-    } catch (error) {
-      console.error("Failed to fetch receipts:", error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const getTypeIcon = (type) => {
-    const icons = {
-      SALES: "📄",
-      PAYMENT: "💰",
-      INVOICE: "📋",
-    };
-    return icons[type] || "📄";
-  };
-
-  if (loading) {
+  if (!currentTransaction || currentTransaction._id !== id) {
     return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color={Colors.primary} />
+      <View style={styles.container}>
+        <Text style={styles.emptyText}>Loading...</Text>
+      </View>
+    );
+  }
+
+  const receiptData = currentTransaction.receiptData || {};
+  
+  // Build receipts from available data
+  const receipts = [];
+  
+  // Sales Receipt
+  if (receiptData.receiptType || currentTransaction.salesReceiptPrinted !== undefined) {
+    receipts.push({
+      _id: `${currentTransaction._id}-sales`,
+      receiptNumber: `${currentTransaction.transactionNumber || "SALES"}-001`,
+      type: "SALES",
+      printed: currentTransaction.salesReceiptPrinted || false,
+      createdAt: receiptData.generatedAt || currentTransaction.salesTimestamp || currentTransaction.createdAt,
+      data: receiptData,
+      icon: "📄",
+    });
+  }
+  
+  // Payment Receipt
+  if (receiptData.summary?.paymentMethod && receiptData.summary?.paymentMethod !== "N/A") {
+    receipts.push({
+      _id: `${currentTransaction._id}-payment`,
+      receiptNumber: `${currentTransaction.transactionNumber || "PAYMENT"}-001`,
+      type: "PAYMENT",
+      printed: currentTransaction.paymentReceiptPrinted || false,
+      createdAt: receiptData.generatedAt || currentTransaction.updatedAt,
+      data: receiptData,
+      icon: "💰",
+    });
+  }
+  
+  // Invoice Receipt
+  if (currentTransaction.status === "COMPLETED" || currentTransaction.finalInvoicePrinted) {
+    receipts.push({
+      _id: `${currentTransaction._id}-invoice`,
+      receiptNumber: `${currentTransaction.transactionNumber || "INVOICE"}-001`,
+      type: "INVOICE",
+      printed: currentTransaction.finalInvoicePrinted || false,
+      createdAt: currentTransaction.updatedAt,
+      data: receiptData,
+      icon: "📋",
+    });
+  }
+
+  const getTypeLabel = (type) => {
+    const labels = {
+      SALES: "Sales Receipt",
+      PAYMENT: "Payment Receipt",
+      INVOICE: "Invoice",
+    };
+    return labels[type] || type;
+  };
+
+  const viewReceipt = (receipt) => {
+    // Navigate to receipt detail or open modal
+    router.push(`/receipts/view/${receipt._id}`);
+  };
+
+  const printReceipt = (receipt) => {
+    // Implement print functionality
+    Alert.alert("Print", `Printing ${receipt.type} receipt...`);
+  };
+
+  if (receipts.length === 0) {
+    return (
+      <View style={styles.container}>
+        <CustomHeader title="Transaction Receipts" />
+        <View style={styles.emptyContainer}>
+          <FileText size={48} color={Colors.gray300} />
+          <Text style={styles.emptyText}>No receipts available</Text>
+          <Text style={styles.emptySubText}>
+            Receipts will appear once the transaction is processed
+          </Text>
+        </View>
       </View>
     );
   }
 
   return (
     <View style={styles.container}>
-      <CustomHeader title="Transaction Receipt" />
+      <CustomHeader title="Transaction Receipts" />
       <FlatList
         style={styles.container}
         contentContainerStyle={styles.content}
         data={receipts}
         keyExtractor={(item) => item._id}
         renderItem={({ item }) => (
-          <TouchableOpacity
-            style={styles.receiptItem}
-            onPress={() => router.push(`/receipts/${item._id}`)}
-          >
+          <View style={styles.receiptItem}>
             <View style={styles.receiptHeader}>
-              <Text style={styles.receiptIcon}>{getTypeIcon(item.type)}</Text>
+              <Text style={styles.receiptIcon}>{item.icon}</Text>
               <View style={styles.receiptInfo}>
                 <Text style={styles.receiptNumber}>{item.receiptNumber}</Text>
-                <Text style={styles.receiptType}>{item.type}</Text>
+                <Text style={styles.receiptType}>{getTypeLabel(item.type)}</Text>
               </View>
               <View style={styles.receiptActions}>
                 <TouchableOpacity
-                  style={styles.viewButton}
-                  onPress={() => router.push(`/receipts/${item._id}`)}
+                  style={styles.actionButton}
+                  onPress={() => viewReceipt(item)}
                 >
                   <Eye size={18} color={Colors.primary} />
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.actionButton}
+                  onPress={() => printReceipt(item)}
+                >
+                  <Printer size={18} color={Colors.gray600} />
                 </TouchableOpacity>
               </View>
             </View>
@@ -107,12 +355,6 @@ export default function TransactionReceipts() {
                 </Text>
               </View>
             </View>
-          </TouchableOpacity>
-        )}
-        ListEmptyComponent={() => (
-          <View style={styles.emptyContainer}>
-            <FileText size={48} color={Colors.gray300} />
-            <Text style={styles.emptyText}>No receipts found</Text>
           </View>
         )}
       />
@@ -123,7 +365,6 @@ export default function TransactionReceipts() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.gray50 },
   content: { padding: Spacing.md },
-  loadingContainer: { flex: 1, justifyContent: "center", alignItems: "center" },
   receiptItem: {
     backgroundColor: Colors.white,
     borderRadius: BorderRadius.lg,
@@ -140,7 +381,10 @@ const styles = StyleSheet.create({
   },
   receiptType: { fontSize: Typography.sm, color: Colors.gray500 },
   receiptActions: { flexDirection: "row" },
-  viewButton: { padding: Spacing.sm },
+  actionButton: {
+    padding: Spacing.sm,
+    marginLeft: Spacing.xs,
+  },
   receiptFooter: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -161,6 +405,21 @@ const styles = StyleSheet.create({
   statusPrintedText: { color: Colors.success },
   statusNotPrinted: { backgroundColor: Colors.warning + "20" },
   statusNotPrintedText: { color: Colors.warning },
-  emptyContainer: { paddingVertical: Spacing["4xl"], alignItems: "center" },
-  emptyText: { color: Colors.gray500, marginTop: Spacing.sm },
+  emptyContainer: { 
+    flex: 1, 
+    justifyContent: "center", 
+    alignItems: "center",
+    padding: Spacing["4xl"],
+  },
+  emptyText: { 
+    color: Colors.gray500, 
+    marginTop: Spacing.md,
+    fontSize: Typography.lg,
+  },
+  emptySubText: {
+    color: Colors.gray400,
+    marginTop: Spacing.xs,
+    textAlign: "center",
+    fontSize: Typography.sm,
+  },
 });

@@ -10,7 +10,6 @@
 //   Image,
 //   Dimensions,
 //   Share,
-//   Platform,
 // } from "react-native";
 // import { useLocalSearchParams, useRouter } from "expo-router";
 // import {
@@ -33,7 +32,7 @@
 //   BorderRadius,
 //   Shadows,
 // } from "../../../../../constants/theme";
-// import { CustomHeader } from "@/components";
+// import CustomHeader from "../../../../../components/ui/CustomHeader";
 
 // const { width } = Dimensions.get("window");
 
@@ -54,36 +53,37 @@
 //       const data = await ReceiptService.getReceipt(id);
 //       setReceipt(data);
 
-//       // Handle QR Code - check if it's a valid data URL
+//       // Handle QR Code
 //       if (data.qrCode) {
-//         // If QR code is already a data URL, use it directly
+//         // If it's already a data URL with image format
 //         if (data.qrCode.startsWith("data:image")) {
 //           setQrCodeImage(data.qrCode);
 //         }
-//         // If it's a base64 string without data URL prefix, add it
-//         else if (data.qrCode.length > 100) {
+//         // If it's a base64 string without prefix
+//         else if (data.qrCode.length > 100 && !data.qrCode.startsWith("http")) {
 //           setQrCodeImage(`data:image/png;base64,${data.qrCode}`);
 //         }
-//         // Otherwise it might be a URL
+//         // Otherwise it might be a URL or raw data
 //         else {
 //           setQrCodeImage(data.qrCode);
 //         }
 //       }
 
-//       // If receipt has cached data, use it
+//       // Handle receipt data - use the cached data from the receipt
 //       if (data.receiptData) {
 //         setReceiptData(data.receiptData);
 //       } else if (data.transactionId) {
-//         // Otherwise fetch transaction data
-//         const transaction = await TransactionService.getTransaction(
-//           data.transactionId._id,
-//         );
-//         // Generate receipt data from transaction
-//         const generatedData = await ReceiptService.generateReceipt(
-//           data.transactionId._id,
-//           data.type,
-//         );
-//         setReceiptData(generatedData);
+//         // If no cached data, fetch from transaction
+//         const transactionId = data.transactionId._id || data.transactionId;
+//         if (transactionId) {
+//           const transaction = await TransactionService.getTransaction(transactionId);
+//           // Generate receipt data from transaction
+//           const generatedData = await ReceiptService.generateReceipt(
+//             transactionId,
+//             data.type
+//           );
+//           setReceiptData(generatedData);
+//         }
 //       }
 //     } catch (error) {
 //       console.error("Error fetching receipt:", error);
@@ -95,8 +95,9 @@
 
 //   const handleShare = async () => {
 //     try {
+//       const transaction = receipt?.transactionId || {};
 //       await Share.share({
-//         message: `Receipt: ${receipt.receiptNumber}\nType: ${receipt.type}\nTransaction: ${receipt.transactionId?.transactionNumber}\nTotal: ${formatCurrency(receipt.transactionId?.totalAmount || 0)}\nDate: ${formatDateTime(receipt.createdAt)}`,
+//         message: `Receipt: ${receipt?.receiptNumber || "N/A"}\nType: ${receipt?.type || "N/A"}\nTransaction: ${transaction?.transactionNumber || "N/A"}\nTotal: ${formatCurrency(transaction?.totalAmount || 0)}\nDate: ${formatDateTime(receipt?.createdAt)}`,
 //         title: "Receipt",
 //       });
 //     } catch (error) {
@@ -144,36 +145,27 @@
 //   };
 
 //   const renderItemDetails = (item) => (
-//     <View key={item.id || item._id} style={styles.itemRow}>
+//     <View key={item.id || item._id || item.productId} style={styles.itemRow}>
 //       <View style={styles.itemInfo}>
-//         <Text style={styles.itemName}>{item.name}</Text>
+//         <Text style={styles.itemName}>{item.name || "Item"}</Text>
 //         <Text style={styles.itemSku}>SKU: {item.sku || "N/A"}</Text>
 //         <View style={styles.itemDetails}>
 //           <Text style={styles.itemDetailText}>
-//             {item.quantity} × {formatCurrency(item.unitPrice)}
+//             {item.quantity || 0} × {formatCurrency(item.unitPrice || 0)}
 //           </Text>
-//           {item.taxAmount > 0 && (
+//           {(item.taxAmount || 0) > 0 && (
 //             <Text style={styles.itemTaxText}>
-//               Tax: {formatCurrency(item.taxAmount)}
+//               Tax: {formatCurrency(item.taxAmount || 0)}
 //             </Text>
 //           )}
-//           {item.discountAmount > 0 && (
+//           {(item.discountAmount || 0) > 0 && (
 //             <Text style={styles.itemDiscountText}>
-//               Disc: {formatCurrency(item.discountAmount)}
+//               Disc: {formatCurrency(item.discountAmount || 0)}
 //             </Text>
 //           )}
-//           {item.warehouseLocation &&
-//             (item.warehouseLocation.aisle || item.warehouseLocation.shelf) && (
-//               <Text style={styles.itemLocationText}>
-//                 📍 {item.warehouseLocation.aisle || ""}
-//                 {item.warehouseLocation.shelf
-//                   ? `-${item.warehouseLocation.shelf}`
-//                   : ""}
-//               </Text>
-//             )}
 //         </View>
 //       </View>
-//       <Text style={styles.itemTotal}>{formatCurrency(item.totalPrice)}</Text>
+//       <Text style={styles.itemTotal}>{formatCurrency(item.totalPrice || 0)}</Text>
 //     </View>
 //   );
 
@@ -200,8 +192,17 @@
 //     );
 //   }
 
+//   // Safely get transaction data
 //   const transaction = receipt.transactionId || {};
 //   const summary = receiptData?.summary || {};
+//   const store = receiptData?.store || {};
+//   const staff = receiptData?.staff || {};
+//   const timeline = receiptData?.timeline || {};
+//   const qrCodes = receiptData?.qrCodes || {};
+//   const workflow = receiptData?.workflow || {};
+//   const additionalData = receiptData?.additionalData || {};
+//   const items = receiptData?.items || [];
+//   const releasedItems = receiptData?.releasedItems || [];
 
 //   return (
 //     <View style={styles.container}>
@@ -215,7 +216,7 @@
 //           <View style={styles.headerRow}>
 //             <View style={styles.headerLeft}>
 //               <Text style={styles.headerLabel}>Receipt Number</Text>
-//               <Text style={styles.headerNumber}>{receipt.receiptNumber}</Text>
+//               <Text style={styles.headerNumber}>{receipt.receiptNumber || "N/A"}</Text>
 //             </View>
 //             <View
 //               style={[
@@ -227,7 +228,7 @@
 //               <Text
 //                 style={[styles.typeText, { color: getTypeColor(receipt.type) }]}
 //               >
-//                 {receipt.type}
+//                 {receipt.type || "N/A"}
 //               </Text>
 //             </View>
 //           </View>
@@ -259,30 +260,22 @@
 //           </View>
 //         </View>
 
-//         {/* Store Info */}
-//         {receiptData?.store && (
+//         {/* Store Info - Only show if data exists */}
+//         {store.name && (
 //           <View style={styles.detailsCard}>
 //             <Text style={styles.sectionTitle}>Store Information</Text>
-//             <Text style={styles.storeName}>{receiptData.store.name}</Text>
-//             {receiptData.store.address && (
+//             <Text style={styles.storeName}>{store.name}</Text>
+//             {store.address && <Text style={styles.storeDetail}>{store.address}</Text>}
+//             {store.city && store.state && (
 //               <Text style={styles.storeDetail}>
-//                 {receiptData.store.address}
+//                 {store.city}, {store.state} {store.zipCode || ""}
 //               </Text>
 //             )}
-//             {receiptData.store.phone && (
-//               <Text style={styles.storeDetail}>
-//                 📞 {receiptData.store.phone}
-//               </Text>
+//             {store.phone && (
+//               <Text style={styles.storeDetail}>📞 {store.phone}</Text>
 //             )}
-//             {receiptData.store.email && (
-//               <Text style={styles.storeDetail}>
-//                 ✉️ {receiptData.store.email}
-//               </Text>
-//             )}
-//             {receiptData.store.taxId && (
-//               <Text style={styles.storeDetail}>
-//                 Tax ID: {receiptData.store.taxId}
-//               </Text>
+//             {store.email && (
+//               <Text style={styles.storeDetail}>✉️ {store.email}</Text>
 //             )}
 //           </View>
 //         )}
@@ -307,79 +300,91 @@
 //           <View style={styles.detailRow}>
 //             <Text style={styles.detailLabel}>Status</Text>
 //             <Text style={[styles.detailValue, styles.statusValue]}>
-//               {transaction.status || "N/A"}
+//               {transaction.status || workflow.status || "N/A"}
 //             </Text>
 //           </View>
-//           {receiptData?.timeline && (
-//             <>
-//               {receiptData.timeline.sales && (
-//                 <View style={styles.detailRow}>
-//                   <Text style={styles.detailLabel}>Sales Time</Text>
-//                   <Text style={styles.detailValue}>
-//                     {formatDateTime(receiptData.timeline.sales)}
-//                   </Text>
-//                 </View>
-//               )}
-//               {receiptData.timeline.payment && (
-//                 <View style={styles.detailRow}>
-//                   <Text style={styles.detailLabel}>Payment Time</Text>
-//                   <Text style={styles.detailValue}>
-//                     {formatDateTime(receiptData.timeline.payment)}
-//                   </Text>
-//                 </View>
-//               )}
-//               {receiptData.timeline.release && (
-//                 <View style={styles.detailRow}>
-//                   <Text style={styles.detailLabel}>Release Time</Text>
-//                   <Text style={styles.detailValue}>
-//                     {formatDateTime(receiptData.timeline.release)}
-//                   </Text>
-//                 </View>
-//               )}
-//             </>
+//           {/* Workflow Statuses */}
+//           {workflow.salesStatus && workflow.salesStatus !== "PENDING" && (
+//             <View style={styles.detailRow}>
+//               <Text style={styles.detailLabel}>Sales Status</Text>
+//               <Text style={styles.detailValue}>{workflow.salesStatus}</Text>
+//             </View>
+//           )}
+//           {workflow.paymentStatus && workflow.paymentStatus !== "PENDING" && (
+//             <View style={styles.detailRow}>
+//               <Text style={styles.detailLabel}>Payment Status</Text>
+//               <Text style={styles.detailValue}>{workflow.paymentStatus}</Text>
+//             </View>
+//           )}
+//           {workflow.warehouseStatus && workflow.warehouseStatus !== "PENDING" && (
+//             <View style={styles.detailRow}>
+//               <Text style={styles.detailLabel}>Warehouse Status</Text>
+//               <Text style={styles.detailValue}>{workflow.warehouseStatus}</Text>
+//             </View>
+//           )}
+//           {/* Timeline */}
+//           {timeline.created && (
+//             <View style={styles.detailRow}>
+//               <Text style={styles.detailLabel}>Created</Text>
+//               <Text style={styles.detailValue}>
+//                 {formatDateTime(timeline.created)}
+//               </Text>
+//             </View>
+//           )}
+//           {timeline.sales && (
+//             <View style={styles.detailRow}>
+//               <Text style={styles.detailLabel}>Sales Time</Text>
+//               <Text style={styles.detailValue}>
+//                 {formatDateTime(timeline.sales)}
+//               </Text>
+//             </View>
+//           )}
+//           {timeline.payment && (
+//             <View style={styles.detailRow}>
+//               <Text style={styles.detailLabel}>Payment Time</Text>
+//               <Text style={styles.detailValue}>
+//                 {formatDateTime(timeline.payment)}
+//               </Text>
+//             </View>
+//           )}
+//           {timeline.release && (
+//             <View style={styles.detailRow}>
+//               <Text style={styles.detailLabel}>Release Time</Text>
+//               <Text style={styles.detailValue}>
+//                 {formatDateTime(timeline.release)}
+//               </Text>
+//             </View>
 //           )}
 //         </View>
 
 //         {/* Staff Information */}
-//         {receiptData?.staff && (
+//         {(staff.salesAttendant || staff.financeAttendant || staff.warehouseStaff) && (
 //           <View style={styles.detailsCard}>
 //             <Text style={styles.sectionTitle}>Staff</Text>
-//             {receiptData.staff.salesAttendant && (
+//             {staff.salesAttendant && (
 //               <View style={styles.staffRow}>
 //                 <Text style={styles.staffRole}>Sales</Text>
-//                 <Text style={styles.staffName}>
-//                   {receiptData.staff.salesAttendant.name}
-//                 </Text>
-//                 {receiptData.staff.salesAttendant.email && (
-//                   <Text style={styles.staffEmail}>
-//                     {receiptData.staff.salesAttendant.email}
-//                   </Text>
+//                 <Text style={styles.staffName}>{staff.salesAttendant.name}</Text>
+//                 {staff.salesAttendant.email && (
+//                   <Text style={styles.staffEmail}>{staff.salesAttendant.email}</Text>
 //                 )}
 //               </View>
 //             )}
-//             {receiptData.staff.financeAttendant && (
+//             {staff.financeAttendant && (
 //               <View style={styles.staffRow}>
 //                 <Text style={styles.staffRole}>Finance</Text>
-//                 <Text style={styles.staffName}>
-//                   {receiptData.staff.financeAttendant.name}
-//                 </Text>
-//                 {receiptData.staff.financeAttendant.email && (
-//                   <Text style={styles.staffEmail}>
-//                     {receiptData.staff.financeAttendant.email}
-//                   </Text>
+//                 <Text style={styles.staffName}>{staff.financeAttendant.name}</Text>
+//                 {staff.financeAttendant.email && (
+//                   <Text style={styles.staffEmail}>{staff.financeAttendant.email}</Text>
 //                 )}
 //               </View>
 //             )}
-//             {receiptData.staff.warehouseStaff && (
+//             {staff.warehouseStaff && (
 //               <View style={styles.staffRow}>
 //                 <Text style={styles.staffRole}>Warehouse</Text>
-//                 <Text style={styles.staffName}>
-//                   {receiptData.staff.warehouseStaff.name}
-//                 </Text>
-//                 {receiptData.staff.warehouseStaff.email && (
-//                   <Text style={styles.staffEmail}>
-//                     {receiptData.staff.warehouseStaff.email}
-//                   </Text>
+//                 <Text style={styles.staffName}>{staff.warehouseStaff.name}</Text>
+//                 {staff.warehouseStaff.email && (
+//                   <Text style={styles.staffEmail}>{staff.warehouseStaff.email}</Text>
 //                 )}
 //               </View>
 //             )}
@@ -387,22 +392,20 @@
 //         )}
 
 //         {/* Items */}
-//         {receiptData?.items && receiptData.items.length > 0 && (
+//         {items.length > 0 && (
 //           <View style={styles.detailsCard}>
-//             <Text style={styles.sectionTitle}>
-//               Items ({receiptData.items.length})
-//             </Text>
-//             {receiptData.items.map((item) => renderItemDetails(item))}
+//             <Text style={styles.sectionTitle}>Items ({items.length})</Text>
+//             {items.map((item, index) => renderItemDetails(item))}
 //           </View>
 //         )}
 
 //         {/* Released Items */}
-//         {receiptData?.releasedItems && receiptData.releasedItems.length > 0 && (
+//         {releasedItems.length > 0 && (
 //           <View style={styles.detailsCard}>
 //             <Text style={styles.sectionTitle}>
-//               Released Items ({receiptData.releasedItems.length})
+//               Released Items ({releasedItems.length})
 //             </Text>
-//             {receiptData.releasedItems.map((item, index) => (
+//             {releasedItems.map((item, index) => (
 //               <View key={index} style={styles.itemRow}>
 //                 <View style={styles.itemInfo}>
 //                   <Text style={styles.itemName}>
@@ -410,7 +413,7 @@
 //                   </Text>
 //                   <Text style={styles.itemSku}>SKU: {item.sku || "N/A"}</Text>
 //                   <Text style={styles.itemDetailText}>
-//                     {item.quantityReleased} × {formatCurrency(item.unitPrice)}
+//                     {item.quantityReleased || 0} × {formatCurrency(item.unitPrice || 0)}
 //                   </Text>
 //                   {item.releasedByName && (
 //                     <Text style={styles.itemReleasedBy}>
@@ -419,7 +422,7 @@
 //                   )}
 //                 </View>
 //                 <Text style={styles.itemTotal}>
-//                   {formatCurrency(item.totalPrice)}
+//                   {formatCurrency(item.totalPrice || 0)}
 //                 </Text>
 //               </View>
 //             ))}
@@ -427,7 +430,7 @@
 //         )}
 
 //         {/* Financial Summary */}
-//         {(Object.keys(summary).length > 0 || transaction) && (
+//         {(summary.subtotal > 0 || summary.totalAmount > 0) && (
 //           <View style={styles.detailsCard}>
 //             <Text style={styles.sectionTitle}>Financial Summary</Text>
 //             <View style={styles.summaryRow}>
@@ -442,7 +445,7 @@
 //                 {formatCurrency(summary.taxTotal || transaction.taxTotal || 0)}
 //               </Text>
 //             </View>
-//             {summary.discountTotal > 0 && (
+//             {(summary.discountTotal || 0) > 0 && (
 //               <View style={styles.summaryRow}>
 //                 <Text style={styles.summaryLabel}>Discount</Text>
 //                 <Text style={[styles.summaryValue, styles.discountValue]}>
@@ -454,11 +457,11 @@
 //               <Text style={styles.totalLabel}>Total</Text>
 //               <Text style={styles.totalValue}>
 //                 {formatCurrency(
-//                   summary.totalAmount || transaction.totalAmount || 0,
+//                   summary.totalAmount || transaction.totalAmount || 0
 //                 )}
 //               </Text>
 //             </View>
-//             {summary.amountPaid > 0 && (
+//             {(summary.amountPaid || 0) > 0 && (
 //               <>
 //                 <View style={styles.summaryRow}>
 //                   <Text style={styles.summaryLabel}>Amount Paid</Text>
@@ -466,7 +469,7 @@
 //                     {formatCurrency(summary.amountPaid)}
 //                   </Text>
 //                 </View>
-//                 {summary.changeAmount > 0 && (
+//                 {(summary.changeAmount || 0) > 0 && (
 //                   <View style={styles.summaryRow}>
 //                     <Text style={styles.summaryLabel}>Change</Text>
 //                     <Text style={styles.summaryValue}>
@@ -480,107 +483,85 @@
 //                     {summary.paymentMethod || "N/A"}
 //                   </Text>
 //                 </View>
-//                 {summary.paymentReference && (
-//                   <View style={styles.summaryRow}>
-//                     <Text style={styles.summaryLabel}>Reference</Text>
-//                     <Text style={styles.summaryValue}>
-//                       {summary.paymentReference}
-//                     </Text>
-//                   </View>
-//                 )}
 //               </>
 //             )}
 //           </View>
 //         )}
 
 //         {/* Additional Data */}
-//         {receiptData?.additionalData && (
+//         {(additionalData.customerName || additionalData.notes || additionalData.orderType) && (
 //           <View style={styles.detailsCard}>
 //             <Text style={styles.sectionTitle}>Additional Information</Text>
-//             {receiptData.additionalData.customerName && (
+//             {additionalData.customerName && (
 //               <View style={styles.detailRow}>
 //                 <Text style={styles.detailLabel}>Customer</Text>
 //                 <Text style={styles.detailValue}>
-//                   {receiptData.additionalData.customerName}
+//                   {additionalData.customerName}
 //                 </Text>
 //               </View>
 //             )}
-//             {receiptData.additionalData.customerEmail && (
+//             {additionalData.customerEmail && (
 //               <View style={styles.detailRow}>
 //                 <Text style={styles.detailLabel}>Customer Email</Text>
 //                 <Text style={styles.detailValue}>
-//                   {receiptData.additionalData.customerEmail}
+//                   {additionalData.customerEmail}
 //                 </Text>
 //               </View>
 //             )}
-//             {receiptData.additionalData.customerPhone && (
+//             {additionalData.customerPhone && (
 //               <View style={styles.detailRow}>
 //                 <Text style={styles.detailLabel}>Customer Phone</Text>
 //                 <Text style={styles.detailValue}>
-//                   {receiptData.additionalData.customerPhone}
+//                   {additionalData.customerPhone}
 //                 </Text>
 //               </View>
 //             )}
-//             {receiptData.additionalData.orderType && (
+//             {additionalData.orderType && (
 //               <View style={styles.detailRow}>
 //                 <Text style={styles.detailLabel}>Order Type</Text>
 //                 <Text style={styles.detailValue}>
-//                   {receiptData.additionalData.orderType}
+//                   {additionalData.orderType}
 //                 </Text>
 //               </View>
 //             )}
-//             {receiptData.additionalData.notes && (
+//             {additionalData.notes && (
 //               <View style={styles.detailRow}>
 //                 <Text style={styles.detailLabel}>Notes</Text>
 //                 <Text style={[styles.detailValue, styles.notesValue]}>
-//                   {receiptData.additionalData.notes}
+//                   {additionalData.notes}
 //                 </Text>
 //               </View>
 //             )}
-//             {receiptData.additionalData.tags &&
-//               receiptData.additionalData.tags.length > 0 && (
-//                 <View style={styles.tagsContainer}>
-//                   {receiptData.additionalData.tags.map((tag, index) => (
-//                     <View key={index} style={styles.tag}>
-//                       <Text style={styles.tagText}>{tag}</Text>
-//                     </View>
-//                   ))}
-//                 </View>
-//               )}
+//             {additionalData.tags && additionalData.tags.length > 0 && (
+//               <View style={styles.tagsContainer}>
+//                 {additionalData.tags.map((tag, index) => (
+//                   <View key={index} style={styles.tag}>
+//                     <Text style={styles.tagText}>{tag}</Text>
+//                   </View>
+//                 ))}
+//               </View>
+//             )}
 //           </View>
 //         )}
 
-//         {/* QR Code Section - FIXED */}
+//         {/* QR Code Section */}
 //         <View style={styles.qrCard}>
 //           <Text style={styles.sectionTitle}>QR Code</Text>
 //           {qrCodeImage ? (
 //             <View style={styles.qrContainer}>
 //               <Image
-//                 source={{
-//                   uri: qrCodeImage,
-//                   // Add cache control to prevent caching issues
-//                   cache: "reload",
-//                 }}
+//                 source={{ uri: qrCodeImage }}
 //                 style={styles.qrImage}
 //                 resizeMode="contain"
 //                 onError={(error) => {
 //                   console.error("QR Image loading error:", error.nativeEvent);
 //                   // Try to fix the QR code if it failed
 //                   if (qrCodeImage && !qrCodeImage.startsWith("data:image")) {
-//                     // Try adding data URL prefix
 //                     setQrCodeImage(`data:image/png;base64,${qrCodeImage}`);
 //                   }
 //                 }}
-//                 onLoad={() => {
-//                   console.log("QR Image loaded successfully");
-//                 }}
 //               />
 //               <Text style={styles.qrHint}>Scan this QR code</Text>
-//               {receipt.qrPayload?.step && (
-//                 <Text style={styles.qrStep}>
-//                   Step: {receipt.qrPayload.step}
-//                 </Text>
-//               )}
 //               {receipt.type && (
 //                 <Text style={styles.qrType}>Type: {receipt.type}</Text>
 //               )}
@@ -596,14 +577,12 @@
 //                 onPress={async () => {
 //                   try {
 //                     setLoading(true);
-//                     // Generate a new receipt with QR
-//                     const result = await ReceiptService.generateReceipt(
-//                       receipt.transactionId._id,
-//                       receipt.type,
-//                     );
-//                     // Refresh the receipt
-//                     await fetchReceipt();
-//                     Alert.alert("Success", "QR code regenerated");
+//                     const transactionId = receipt.transactionId?._id || receipt.transactionId;
+//                     if (transactionId) {
+//                       await ReceiptService.generateReceipt(transactionId, receipt.type);
+//                       await fetchReceipt();
+//                       Alert.alert("Success", "QR code regenerated");
+//                     }
 //                   } catch (error) {
 //                     Alert.alert("Error", "Failed to regenerate QR code");
 //                   } finally {
@@ -618,38 +597,22 @@
 //         </View>
 
 //         {/* Footer */}
-//         {receiptData?.store?.receiptFooter && (
+//         {store.receiptFooter && (
 //           <View style={styles.footerCard}>
-//             <Text style={styles.footerText}>
-//               {receiptData.store.receiptFooter}
-//             </Text>
+//             <Text style={styles.footerText}>{store.receiptFooter}</Text>
 //           </View>
 //         )}
 //       </ScrollView>
 
 //       {/* Action Buttons */}
 //       <View style={styles.actionsContainer}>
-//         {/* <TouchableOpacity 
-//           style={[styles.actionButton, styles.backActionButton]} 
-//           onPress={() => router.back()}
-//         >
-//           <ArrowLeft size={20} color={Colors.gray700} />
-//           <Text style={styles.backActionText}>Back</Text>
-//         </TouchableOpacity> */}
 //         <TouchableOpacity
 //           onPress={handleShare}
 //           style={[styles.actionButton, styles.shareActionButton]}
 //         >
-//           <Share2 size={20} color={Colors.gray700} />
+//           <Share2 size={20} color={Colors.white} />
 //           <Text style={styles.actionButtonText}>Share</Text>
 //         </TouchableOpacity>
-//         {/* <TouchableOpacity 
-//           style={[styles.actionButton, styles.previewActionButton]} 
-//           onPress={() => router.push(`/receipts/${id}/preview`)}
-//         >
-//           <Printer size={20} color={Colors.white} />
-//           <Text style={styles.actionButtonText}>Preview</Text>
-//         </TouchableOpacity> */}
 //         <TouchableOpacity
 //           style={[styles.actionButton, styles.printActionButton]}
 //           onPress={handlePrint}
@@ -696,22 +659,6 @@
 //     borderRadius: BorderRadius.lg,
 //   },
 //   closeButtonText: { color: Colors.white, fontWeight: "600" },
-//   header: {
-//     flexDirection: "row",
-//     justifyContent: "space-between",
-//     alignItems: "center",
-//     paddingHorizontal: Spacing.md,
-//     paddingVertical: Spacing.md,
-//     backgroundColor: Colors.white,
-//     borderBottomWidth: 1,
-//     borderBottomColor: Colors.gray200,
-//   },
-//   headerButton: { padding: Spacing.sm },
-//   headerTitle: {
-//     fontSize: Typography.lg,
-//     fontWeight: "600",
-//     color: Colors.gray900,
-//   },
 //   scrollView: { flex: 1 },
 //   scrollContent: { padding: Spacing.md, paddingBottom: Spacing["4xl"] },
 //   headerCard: {
@@ -830,7 +777,6 @@
 //   itemDetailText: { fontSize: Typography.xs, color: Colors.gray600 },
 //   itemTaxText: { fontSize: Typography.xs, color: Colors.warning },
 //   itemDiscountText: { fontSize: Typography.xs, color: Colors.success },
-//   itemLocationText: { fontSize: Typography.xs, color: Colors.gray400 },
 //   itemReleasedBy: {
 //     fontSize: Typography.xs,
 //     color: Colors.primary,
@@ -904,7 +850,6 @@
 //     color: Colors.gray500,
 //     marginTop: Spacing.sm,
 //   },
-//   qrStep: { fontSize: Typography.xs, color: Colors.primary, marginTop: 2 },
 //   qrType: { fontSize: Typography.xs, color: Colors.gray400, marginTop: 1 },
 //   qrPlaceholder: {
 //     width: width * 0.4,
@@ -961,12 +906,6 @@
 //     borderRadius: BorderRadius.lg,
 //     gap: 4,
 //   },
-//   backActionButton: { backgroundColor: Colors.gray200 },
-//   backActionText: {
-//     fontWeight: "600",
-//     color: Colors.gray700,
-//     fontSize: Typography.sm,
-//   },
 //   shareActionButton: { backgroundColor: Colors.primary },
 //   printActionButton: { backgroundColor: Colors.warning },
 //   downloadActionButton: { backgroundColor: Colors.success },
@@ -976,8 +915,6 @@
 //     fontSize: Typography.sm,
 //   },
 // });
-
-
 
 
 
@@ -1039,7 +976,9 @@ import {
   BorderRadius,
   Shadows,
 } from "../../../../../constants/theme";
-import { CustomHeader } from "@/components";
+import CustomHeader from "../../../../../components/ui/CustomHeader";
+import * as FileSystem from 'expo-file-system';
+import * as Sharing from 'expo-sharing';
 
 const { width } = Dimensions.get("window");
 
@@ -1050,6 +989,7 @@ export default function ReceiptDetail() {
   const [receipt, setReceipt] = useState(null);
   const [receiptData, setReceiptData] = useState(null);
   const [qrCodeImage, setQrCodeImage] = useState(null);
+  const [transaction, setTransaction] = useState(null);
 
   useEffect(() => {
     fetchReceipt();
@@ -1057,39 +997,36 @@ export default function ReceiptDetail() {
 
   const fetchReceipt = async () => {
     try {
+      // Get receipt details
       const data = await ReceiptService.getReceipt(id);
       setReceipt(data);
 
       // Handle QR Code
       if (data.qrCode) {
-        // If it's already a data URL with image format
         if (data.qrCode.startsWith("data:image")) {
           setQrCodeImage(data.qrCode);
-        }
-        // If it's a base64 string without prefix
-        else if (data.qrCode.length > 100 && !data.qrCode.startsWith("http")) {
+        } else if (data.qrCode.length > 100 && !data.qrCode.startsWith("http")) {
           setQrCodeImage(`data:image/png;base64,${data.qrCode}`);
-        }
-        // Otherwise it might be a URL or raw data
-        else {
+        } else {
           setQrCodeImage(data.qrCode);
         }
       }
 
-      // Handle receipt data - use the cached data from the receipt
+      // Get receipt data
       if (data.receiptData) {
         setReceiptData(data.receiptData);
-      } else if (data.transactionId) {
-        // If no cached data, fetch from transaction
+      }
+
+      // Get transaction if available
+      if (data.transactionId) {
         const transactionId = data.transactionId._id || data.transactionId;
         if (transactionId) {
-          const transaction = await TransactionService.getTransaction(transactionId);
-          // Generate receipt data from transaction
-          const generatedData = await ReceiptService.generateReceipt(
-            transactionId,
-            data.type
-          );
-          setReceiptData(generatedData);
+          try {
+            const trans = await TransactionService.getTransaction(transactionId);
+            setTransaction(trans);
+          } catch (e) {
+            console.log('Could not fetch transaction');
+          }
         }
       }
     } catch (error) {
@@ -1102,9 +1039,9 @@ export default function ReceiptDetail() {
 
   const handleShare = async () => {
     try {
-      const transaction = receipt?.transactionId || {};
+      const t = transaction || {};
       await Share.share({
-        message: `Receipt: ${receipt?.receiptNumber || "N/A"}\nType: ${receipt?.type || "N/A"}\nTransaction: ${transaction?.transactionNumber || "N/A"}\nTotal: ${formatCurrency(transaction?.totalAmount || 0)}\nDate: ${formatDateTime(receipt?.createdAt)}`,
+        message: `Receipt: ${receipt?.receiptNumber || "N/A"}\nType: ${receipt?.type || "N/A"}\nTransaction: ${t?.transactionNumber || "N/A"}\nTotal: ${formatCurrency(t?.totalAmount || 0)}\nDate: ${formatDateTime(receipt?.createdAt)}`,
         title: "Receipt",
       });
     } catch (error) {
@@ -1114,10 +1051,36 @@ export default function ReceiptDetail() {
 
   const handleDownload = async () => {
     try {
-      await ReceiptService.downloadReceipt(id);
-      Alert.alert("Success", "Receipt downloaded successfully");
+      setLoading(true);
+      
+      // Generate receipt PDF
+      const transactionId = receipt?.transactionId?._id || receipt?.transactionId;
+      if (transactionId) {
+        const response = await ReceiptService.generateReceipt(transactionId, receipt.type);
+        
+        if (response && response.downloadUrl) {
+          const fileUri = FileSystem.documentDirectory + `receipt_${receipt.receiptNumber}.pdf`;
+          const downloadResult = await FileSystem.downloadAsync(
+            response.downloadUrl,
+            fileUri
+          );
+          
+          if (downloadResult.status === 200) {
+            if (await Sharing.isAvailableAsync()) {
+              await Sharing.shareAsync(fileUri);
+            } else {
+              Alert.alert('Download Complete', `Receipt saved to ${fileUri}`);
+            }
+          }
+        } else {
+          Alert.alert('Info', 'Receipt file not available for download');
+        }
+      }
     } catch (error) {
+      console.error("Download error:", error);
       Alert.alert("Error", "Failed to download receipt");
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -1135,6 +1098,7 @@ export default function ReceiptDetail() {
     const icons = {
       SALES: "📄",
       PAYMENT: "💰",
+      RELEASE: "📦",
       INVOICE: "📋",
       FINAL: "✅",
     };
@@ -1145,36 +1109,48 @@ export default function ReceiptDetail() {
     const colors = {
       SALES: Colors.primary,
       PAYMENT: Colors.success,
-      INVOICE: Colors.warning,
+      RELEASE: Colors.warning,
+      INVOICE: '#8B5CF6',
       FINAL: Colors.success,
     };
     return colors[type] || Colors.gray;
   };
 
-  const renderItemDetails = (item) => (
-    <View key={item.id || item._id || item.productId} style={styles.itemRow}>
-      <View style={styles.itemInfo}>
-        <Text style={styles.itemName}>{item.name || "Item"}</Text>
-        <Text style={styles.itemSku}>SKU: {item.sku || "N/A"}</Text>
-        <View style={styles.itemDetails}>
-          <Text style={styles.itemDetailText}>
-            {item.quantity || 0} × {formatCurrency(item.unitPrice || 0)}
+  const getTypeLabel = (type) => {
+    const labels = {
+      SALES: 'Sales Receipt',
+      PAYMENT: 'Payment Receipt',
+      RELEASE: 'Release Receipt',
+      INVOICE: 'Invoice',
+      FINAL: 'Final Receipt',
+    };
+    return labels[type] || type;
+  };
+
+  const renderItemDetails = (item) => {
+    const name = item.name || item.productId?.name || 'Item';
+    const qty = item.quantity || 0;
+    const unitPrice = item.unitPrice || 0;
+    const total = item.totalPrice || (qty * unitPrice);
+    
+    return (
+      <View key={item._id || item.id} style={styles.itemRow}>
+        <View style={styles.itemInfo}>
+          <Text style={styles.itemName}>{name}</Text>
+          <Text style={styles.itemDetail}>
+            Qty: {qty} × {formatCurrency(unitPrice)}
           </Text>
-          {(item.taxAmount || 0) > 0 && (
-            <Text style={styles.itemTaxText}>
-              Tax: {formatCurrency(item.taxAmount || 0)}
-            </Text>
+          {item.sku && (
+            <Text style={styles.itemSku}>SKU: {item.sku}</Text>
           )}
-          {(item.discountAmount || 0) > 0 && (
-            <Text style={styles.itemDiscountText}>
-              Disc: {formatCurrency(item.discountAmount || 0)}
-            </Text>
+          {item.isReleased && (
+            <Text style={styles.itemReleasedText}>✓ Released</Text>
           )}
         </View>
+        <Text style={styles.itemTotal}>{formatCurrency(total)}</Text>
       </View>
-      <Text style={styles.itemTotal}>{formatCurrency(item.totalPrice || 0)}</Text>
-    </View>
-  );
+    );
+  };
 
   if (loading) {
     return (
@@ -1199,17 +1175,14 @@ export default function ReceiptDetail() {
     );
   }
 
-  // Safely get transaction data
-  const transaction = receipt.transactionId || {};
-  const summary = receiptData?.summary || {};
-  const store = receiptData?.store || {};
-  const staff = receiptData?.staff || {};
-  const timeline = receiptData?.timeline || {};
-  const qrCodes = receiptData?.qrCodes || {};
-  const workflow = receiptData?.workflow || {};
-  const additionalData = receiptData?.additionalData || {};
-  const items = receiptData?.items || [];
-  const releasedItems = receiptData?.releasedItems || [];
+  const t = transaction || {};
+  const data = receiptData || {};
+  const store = data.store || {};
+  const summary = data.summary || {};
+  const staff = data.staff || {};
+  const items = data.items || t.items || [];
+  const releasedItems = data.releasedItems || t.itemsReleased || [];
+  const timeline = data.timeline || {};
 
   return (
     <View style={styles.container}>
@@ -1235,7 +1208,7 @@ export default function ReceiptDetail() {
               <Text
                 style={[styles.typeText, { color: getTypeColor(receipt.type) }]}
               >
-                {receipt.type || "N/A"}
+                {getTypeLabel(receipt.type)}
               </Text>
             </View>
           </View>
@@ -1265,19 +1238,19 @@ export default function ReceiptDetail() {
               </Text>
             </View>
           </View>
+          {receipt.printedAt && (
+            <Text style={styles.printedAtText}>
+              Printed at: {formatDateTime(receipt.printedAt)}
+            </Text>
+          )}
         </View>
 
-        {/* Store Info - Only show if data exists */}
+        {/* Store Info */}
         {store.name && (
           <View style={styles.detailsCard}>
             <Text style={styles.sectionTitle}>Store Information</Text>
             <Text style={styles.storeName}>{store.name}</Text>
             {store.address && <Text style={styles.storeDetail}>{store.address}</Text>}
-            {store.city && store.state && (
-              <Text style={styles.storeDetail}>
-                {store.city}, {store.state} {store.zipCode || ""}
-              </Text>
-            )}
             {store.phone && (
               <Text style={styles.storeDetail}>📞 {store.phone}</Text>
             )}
@@ -1293,43 +1266,29 @@ export default function ReceiptDetail() {
           <View style={styles.detailRow}>
             <Text style={styles.detailLabel}>Transaction #</Text>
             <Text style={styles.detailValue}>
-              {transaction.transactionNumber || "N/A"}
+              {t.transactionNumber || "N/A"}
             </Text>
           </View>
-          {transaction.invoiceNumber && (
+          {t.finalInvoiceNumber && (
             <View style={styles.detailRow}>
               <Text style={styles.detailLabel}>Invoice #</Text>
-              <Text style={styles.detailValue}>
-                {transaction.invoiceNumber}
+              <Text style={[styles.detailValue, styles.invoiceText]}>
+                {t.finalInvoiceNumber}
               </Text>
             </View>
           )}
           <View style={styles.detailRow}>
             <Text style={styles.detailLabel}>Status</Text>
             <Text style={[styles.detailValue, styles.statusValue]}>
-              {transaction.status || workflow.status || "N/A"}
+              {t.status || data.workflow?.status || "N/A"}
             </Text>
           </View>
-          {/* Workflow Statuses */}
-          {workflow.salesStatus && workflow.salesStatus !== "PENDING" && (
+          {t.paymentMethod && (
             <View style={styles.detailRow}>
-              <Text style={styles.detailLabel}>Sales Status</Text>
-              <Text style={styles.detailValue}>{workflow.salesStatus}</Text>
+              <Text style={styles.detailLabel}>Payment Method</Text>
+              <Text style={styles.detailValue}>{t.paymentMethod}</Text>
             </View>
           )}
-          {workflow.paymentStatus && workflow.paymentStatus !== "PENDING" && (
-            <View style={styles.detailRow}>
-              <Text style={styles.detailLabel}>Payment Status</Text>
-              <Text style={styles.detailValue}>{workflow.paymentStatus}</Text>
-            </View>
-          )}
-          {workflow.warehouseStatus && workflow.warehouseStatus !== "PENDING" && (
-            <View style={styles.detailRow}>
-              <Text style={styles.detailLabel}>Warehouse Status</Text>
-              <Text style={styles.detailValue}>{workflow.warehouseStatus}</Text>
-            </View>
-          )}
-          {/* Timeline */}
           {timeline.created && (
             <View style={styles.detailRow}>
               <Text style={styles.detailLabel}>Created</Text>
@@ -1402,7 +1361,7 @@ export default function ReceiptDetail() {
         {items.length > 0 && (
           <View style={styles.detailsCard}>
             <Text style={styles.sectionTitle}>Items ({items.length})</Text>
-            {items.map((item, index) => renderItemDetails(item))}
+            {items.map((item) => renderItemDetails(item))}
           </View>
         )}
 
@@ -1418,9 +1377,8 @@ export default function ReceiptDetail() {
                   <Text style={styles.itemName}>
                     {item.productName || "Item"}
                   </Text>
-                  <Text style={styles.itemSku}>SKU: {item.sku || "N/A"}</Text>
-                  <Text style={styles.itemDetailText}>
-                    {item.quantityReleased || 0} × {formatCurrency(item.unitPrice || 0)}
+                  <Text style={styles.itemDetail}>
+                    Qty: {item.quantityReleased || 0} × {formatCurrency(item.unitPrice || 0)}
                   </Text>
                   {item.releasedByName && (
                     <Text style={styles.itemReleasedBy}>
@@ -1437,119 +1395,61 @@ export default function ReceiptDetail() {
         )}
 
         {/* Financial Summary */}
-        {(summary.subtotal > 0 || summary.totalAmount > 0) && (
-          <View style={styles.detailsCard}>
-            <Text style={styles.sectionTitle}>Financial Summary</Text>
+        <View style={styles.detailsCard}>
+          <Text style={styles.sectionTitle}>Financial Summary</Text>
+          <View style={styles.summaryRow}>
+            <Text style={styles.summaryLabel}>Subtotal</Text>
+            <Text style={styles.summaryValue}>
+              {formatCurrency(summary.subtotal || t.subtotal || 0)}
+            </Text>
+          </View>
+          <View style={styles.summaryRow}>
+            <Text style={styles.summaryLabel}>Tax</Text>
+            <Text style={styles.summaryValue}>
+              {formatCurrency(summary.taxTotal || t.taxTotal || 0)}
+            </Text>
+          </View>
+          {(summary.discountTotal || 0) > 0 && (
             <View style={styles.summaryRow}>
-              <Text style={styles.summaryLabel}>Subtotal</Text>
-              <Text style={styles.summaryValue}>
-                {formatCurrency(summary.subtotal || transaction.subtotal || 0)}
+              <Text style={styles.summaryLabel}>Discount</Text>
+              <Text style={[styles.summaryValue, styles.discountValue]}>
+                -{formatCurrency(summary.discountTotal)}
               </Text>
             </View>
-            <View style={styles.summaryRow}>
-              <Text style={styles.summaryLabel}>Tax</Text>
-              <Text style={styles.summaryValue}>
-                {formatCurrency(summary.taxTotal || transaction.taxTotal || 0)}
-              </Text>
-            </View>
-            {(summary.discountTotal || 0) > 0 && (
+          )}
+          <View style={[styles.summaryRow, styles.totalRow]}>
+            <Text style={styles.totalLabel}>Total</Text>
+            <Text style={styles.totalValue}>
+              {formatCurrency(
+                summary.totalAmount || t.totalAmount || 0
+              )}
+            </Text>
+          </View>
+          {(summary.amountPaid || t.amountPaid || 0) > 0 && (
+            <>
               <View style={styles.summaryRow}>
-                <Text style={styles.summaryLabel}>Discount</Text>
-                <Text style={[styles.summaryValue, styles.discountValue]}>
-                  -{formatCurrency(summary.discountTotal)}
+                <Text style={styles.summaryLabel}>Amount Paid</Text>
+                <Text style={styles.summaryValue}>
+                  {formatCurrency(summary.amountPaid || t.amountPaid || 0)}
                 </Text>
               </View>
-            )}
-            <View style={[styles.summaryRow, styles.totalRow]}>
-              <Text style={styles.totalLabel}>Total</Text>
-              <Text style={styles.totalValue}>
-                {formatCurrency(
-                  summary.totalAmount || transaction.totalAmount || 0
-                )}
-              </Text>
-            </View>
-            {(summary.amountPaid || 0) > 0 && (
-              <>
+              {(summary.changeAmount || t.changeAmount || 0) > 0 && (
                 <View style={styles.summaryRow}>
-                  <Text style={styles.summaryLabel}>Amount Paid</Text>
-                  <Text style={styles.summaryValue}>
-                    {formatCurrency(summary.amountPaid)}
+                  <Text style={styles.summaryLabel}>Change</Text>
+                  <Text style={[styles.summaryValue, styles.changeText]}>
+                    {formatCurrency(summary.changeAmount || t.changeAmount || 0)}
                   </Text>
                 </View>
-                {(summary.changeAmount || 0) > 0 && (
-                  <View style={styles.summaryRow}>
-                    <Text style={styles.summaryLabel}>Change</Text>
-                    <Text style={styles.summaryValue}>
-                      {formatCurrency(summary.changeAmount)}
-                    </Text>
-                  </View>
-                )}
-                <View style={styles.summaryRow}>
-                  <Text style={styles.summaryLabel}>Payment Method</Text>
-                  <Text style={styles.summaryValue}>
-                    {summary.paymentMethod || "N/A"}
-                  </Text>
-                </View>
-              </>
-            )}
-          </View>
-        )}
-
-        {/* Additional Data */}
-        {(additionalData.customerName || additionalData.notes || additionalData.orderType) && (
-          <View style={styles.detailsCard}>
-            <Text style={styles.sectionTitle}>Additional Information</Text>
-            {additionalData.customerName && (
-              <View style={styles.detailRow}>
-                <Text style={styles.detailLabel}>Customer</Text>
-                <Text style={styles.detailValue}>
-                  {additionalData.customerName}
+              )}
+              <View style={styles.summaryRow}>
+                <Text style={styles.summaryLabel}>Payment Method</Text>
+                <Text style={styles.summaryValue}>
+                  {summary.paymentMethod || t.paymentMethod || "N/A"}
                 </Text>
               </View>
-            )}
-            {additionalData.customerEmail && (
-              <View style={styles.detailRow}>
-                <Text style={styles.detailLabel}>Customer Email</Text>
-                <Text style={styles.detailValue}>
-                  {additionalData.customerEmail}
-                </Text>
-              </View>
-            )}
-            {additionalData.customerPhone && (
-              <View style={styles.detailRow}>
-                <Text style={styles.detailLabel}>Customer Phone</Text>
-                <Text style={styles.detailValue}>
-                  {additionalData.customerPhone}
-                </Text>
-              </View>
-            )}
-            {additionalData.orderType && (
-              <View style={styles.detailRow}>
-                <Text style={styles.detailLabel}>Order Type</Text>
-                <Text style={styles.detailValue}>
-                  {additionalData.orderType}
-                </Text>
-              </View>
-            )}
-            {additionalData.notes && (
-              <View style={styles.detailRow}>
-                <Text style={styles.detailLabel}>Notes</Text>
-                <Text style={[styles.detailValue, styles.notesValue]}>
-                  {additionalData.notes}
-                </Text>
-              </View>
-            )}
-            {additionalData.tags && additionalData.tags.length > 0 && (
-              <View style={styles.tagsContainer}>
-                {additionalData.tags.map((tag, index) => (
-                  <View key={index} style={styles.tag}>
-                    <Text style={styles.tagText}>{tag}</Text>
-                  </View>
-                ))}
-              </View>
-            )}
-          </View>
-        )}
+            </>
+          )}
+        </View>
 
         {/* QR Code Section */}
         <View style={styles.qrCard}>
@@ -1562,7 +1462,6 @@ export default function ReceiptDetail() {
                 resizeMode="contain"
                 onError={(error) => {
                   console.error("QR Image loading error:", error.nativeEvent);
-                  // Try to fix the QR code if it failed
                   if (qrCodeImage && !qrCodeImage.startsWith("data:image")) {
                     setQrCodeImage(`data:image/png;base64,${qrCodeImage}`);
                   }
@@ -1570,7 +1469,7 @@ export default function ReceiptDetail() {
               />
               <Text style={styles.qrHint}>Scan this QR code</Text>
               {receipt.type && (
-                <Text style={styles.qrType}>Type: {receipt.type}</Text>
+                <Text style={styles.qrType}>Type: {getTypeLabel(receipt.type)}</Text>
               )}
             </View>
           ) : (
@@ -1668,6 +1567,7 @@ const styles = StyleSheet.create({
   closeButtonText: { color: Colors.white, fontWeight: "600" },
   scrollView: { flex: 1 },
   scrollContent: { padding: Spacing.md, paddingBottom: Spacing["4xl"] },
+  
   headerCard: {
     backgroundColor: Colors.white,
     borderRadius: BorderRadius.lg,
@@ -1704,6 +1604,7 @@ const styles = StyleSheet.create({
     marginTop: Spacing.sm,
   },
   headerDate: { fontSize: Typography.sm, color: Colors.gray500 },
+  printedAtText: { fontSize: Typography.xs, color: Colors.gray400, marginTop: 4 },
   statusBadge: {
     paddingHorizontal: Spacing.sm,
     paddingVertical: 2,
@@ -1714,6 +1615,7 @@ const styles = StyleSheet.create({
   statusPrintedText: { color: Colors.success },
   statusNotPrinted: { backgroundColor: Colors.warning + "20" },
   statusNotPrintedText: { color: Colors.warning },
+  
   detailsCard: {
     backgroundColor: Colors.white,
     borderRadius: BorderRadius.lg,
@@ -1733,6 +1635,7 @@ const styles = StyleSheet.create({
     color: Colors.gray900,
   },
   storeDetail: { fontSize: Typography.sm, color: Colors.gray500, marginTop: 2 },
+  
   detailRow: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -1749,23 +1652,28 @@ const styles = StyleSheet.create({
     textAlign: "right",
   },
   statusValue: { color: Colors.primary },
-  notesValue: { textAlign: "left", flex: 1 },
+  invoiceText: { color: Colors.success },
+  
   staffRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    flexWrap: "wrap",
     paddingVertical: Spacing.xs,
     borderBottomWidth: 1,
     borderBottomColor: Colors.gray50,
   },
   staffRole: {
-    fontSize: Typography.xs,
-    color: Colors.gray500,
-    fontWeight: "600",
+    fontSize: Typography.sm,
+    color: Colors.gray600,
+    width: 80,
   },
   staffName: {
     fontSize: Typography.sm,
-    color: Colors.gray900,
     fontWeight: "500",
+    color: Colors.gray900,
   },
   staffEmail: { fontSize: Typography.xs, color: Colors.gray400 },
+  
   itemRow: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -1779,11 +1687,9 @@ const styles = StyleSheet.create({
     fontWeight: "500",
     color: Colors.gray900,
   },
-  itemSku: { fontSize: Typography.xs, color: Colors.gray500 },
-  itemDetails: { flexDirection: "row", flexWrap: "wrap", gap: 4, marginTop: 2 },
-  itemDetailText: { fontSize: Typography.xs, color: Colors.gray600 },
-  itemTaxText: { fontSize: Typography.xs, color: Colors.warning },
-  itemDiscountText: { fontSize: Typography.xs, color: Colors.success },
+  itemDetail: { fontSize: Typography.xs, color: Colors.gray500 },
+  itemSku: { fontSize: Typography.xs, color: Colors.gray400 },
+  itemReleasedText: { fontSize: Typography.xs, color: Colors.success },
   itemReleasedBy: {
     fontSize: Typography.xs,
     color: Colors.primary,
@@ -1794,6 +1700,7 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     color: Colors.gray900,
   },
+  
   summaryRow: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -1806,6 +1713,7 @@ const styles = StyleSheet.create({
     color: Colors.gray900,
   },
   discountValue: { color: Colors.success },
+  changeText: { color: Colors.success },
   totalRow: {
     borderTopWidth: 1,
     borderTopColor: Colors.gray200,
@@ -1822,19 +1730,7 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
     color: Colors.primary,
   },
-  tagsContainer: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: Spacing.xs,
-    marginTop: Spacing.xs,
-  },
-  tag: {
-    backgroundColor: Colors.gray100,
-    paddingHorizontal: Spacing.sm,
-    paddingVertical: 2,
-    borderRadius: BorderRadius.sm,
-  },
-  tagText: { fontSize: Typography.xs, color: Colors.gray700 },
+  
   qrCard: {
     backgroundColor: Colors.white,
     borderRadius: BorderRadius.lg,
@@ -1883,6 +1779,7 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     fontSize: Typography.sm,
   },
+  
   footerCard: {
     backgroundColor: Colors.white,
     borderRadius: BorderRadius.lg,
@@ -1895,6 +1792,7 @@ const styles = StyleSheet.create({
     color: Colors.gray600,
     textAlign: "center",
   },
+  
   actionsContainer: {
     flexDirection: "row",
     padding: Spacing.md,

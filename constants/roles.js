@@ -356,11 +356,13 @@ export const RolePermissions = {
   [Roles.SALES_MANAGER]: [
     Permissions.TRANSACTION_CREATE,
     Permissions.TRANSACTION_READ_ALL,
+    Permissions.INVENTORY_READ,
     Permissions.REPORT_GENERATE,
   ],
   [Roles.SALES_ATTENDANT]: [
     Permissions.TRANSACTION_CREATE,
     Permissions.TRANSACTION_READ_OWN,
+    Permissions.INVENTORY_READ,
   ],
   [Roles.FINANCE_MANAGER]: [
     Permissions.PAYMENT_PROCESS,

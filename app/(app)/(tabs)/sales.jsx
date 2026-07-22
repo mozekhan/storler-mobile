@@ -1631,32 +1631,13 @@ export default function Sales() {
       const finalTransaction = transaction;
       const salesQR = transaction.salesQR;
 
-      //     Alert.alert(
-      //   "✅ Transaction Created!",
-      //   `Transaction: ${finalTransaction.transactionNumber}\n` +
-      //   `Items: ${finalTransaction.items?.length || 0}\n` +
-      //   `Total: ${formatCurrency(finalTransaction?.totalAmount ?? 0)}\n\n` +
-      //   `Sales QR has been generated.`,
-      //   [
-      //     {
-      //       text: "Print",
-      //       onPress: () =>
-      //         router.push({
-      //           pathname: "/(app)/(stacks)/receipts/[id]",
-      //           params: {
-      //             id: finalTransaction._id,
-      //           },
-      //         }),
-      //     },
-      //   ]
-      // );
       Alert.alert(
         "✅ Transaction Created!",
         `Transaction: ${finalTransaction.transactionNumber}
-Items: ${finalTransaction.items?.length || 0}
-Total: ${formatCurrency(finalTransaction.totalAmount)}
+        Items: ${finalTransaction.items?.length || 0}
+        Total: ${formatCurrency(finalTransaction.totalAmount)}
 
-Sales QR has been generated.`,
+        Sales QR has been generated.`,
         [
           {
             text: "View Receipt",
@@ -1776,7 +1757,7 @@ Sales QR has been generated.`,
   const getItemTotal = (item) => {
     return (item.unitPrice || 0) * (item.quantity || 0);
   };
-  
+
   const CartItem = ({ item }) => {
     const total = getItemTotal(item);
     const inventory = item.product?.inventory;

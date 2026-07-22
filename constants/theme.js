@@ -298,7 +298,7 @@
 import { StyleSheet } from 'react-native';
 
 export const Colors = {
-  primary: '#10B981',
+  primary: '#7d36ef',
   primaryLight: '#6EE7B7',
   primaryDark: '#059669',
   secondary: '#6366F1',

@@ -17,9 +17,12 @@
     ],
     "ios": {
       "supportsTablet": true,
+      "bundleIdentifier": "com.moxekhan1.storemanagement",
       "infoPlist": {
         "NSCameraUsageDescription": "This app uses the camera to scan QR codes",
-        "NSPrintUsageDescription": "This app uses printing to print receipts"
+        "NSPrintUsageDescription": "This app uses printing to print receipts",
+        "NSBluetoothAlwaysUsageDescription": "This app needs Bluetooth to connect to thermal printers for printing receipts.",
+        "NSBluetoothPeripheralUsageDescription": "This app needs Bluetooth to connect to thermal printers."
       }
     },
     "android": {
@@ -31,8 +34,15 @@
         "CAMERA",
         "RECORD_AUDIO",
         "INTERNET",
-        "com.android.permission.USE_BIOMETRIC"
-      ]
+        "com.android.permission.USE_BIOMETRIC",
+        "android.permission.BLUETOOTH",
+        "android.permission.BLUETOOTH_ADMIN",
+        "android.permission.BLUETOOTH_CONNECT",
+        "android.permission.BLUETOOTH_SCAN",
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.ACCESS_COARSE_LOCATION"
+      ],
+      "package": "com.moxekhan1.storemanagement"
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -40,11 +50,15 @@
     "extra": {
       "router": {
         "origin": false
+      },
+      "eas": {
+        "projectId": "4c898f38-30ba-4373-b3f8-975de4cdcbfb"
       }
     },
     "plugins": [
       "expo-router",
-      "expo-secure-store"
+      "expo-secure-store",
+      "@react-native-community/datetimepicker"
     ]
   }
 }

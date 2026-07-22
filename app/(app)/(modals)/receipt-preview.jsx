@@ -1,1589 +1,3 @@
-// import React, { useState, useEffect } from 'react';
-// import {
-//   View,
-//   Text,
-//   StyleSheet,
-//   ScrollView,
-//   TouchableOpacity,
-//   Image,
-//   ActivityIndicator,
-//   Alert,
-//   Share,
-//   Dimensions,
-// } from 'react-native';
-// import { SafeAreaView } from 'react-native-safe-area-context';
-// import { useRouter, useLocalSearchParams } from 'expo-router';
-// import { X, Download, Share2, Printer, QrCode } from 'lucide-react-native';
-// import TransactionService from '../../../services/transactionService';
-// import { Colors, Spacing, Typography, BorderRadius, Shadows } from '../../../constants/theme';
-// import { formatCurrency, formatDateTime } from '../../../utils/formatters';
-
-// const { width } = Dimensions.get('window');
-
-// export default function ReceiptPreview() {
-//   const router = useRouter();
-//   const { transactionId } = useLocalSearchParams();
-//   const [loading, setLoading] = useState(true);
-//   const [transaction, setTransaction] = useState(null);
-//   const [qrCode, setQrCode] = useState(null);
-
-//   useEffect(() => {
-//     if (transactionId) {
-//       fetchReceipt();
-//     }
-//   }, [transactionId]);
-
-//   const fetchReceipt = async () => {
-//     try {
-//       setLoading(true);
-//       // Get transaction details with QR
-//       const result = await TransactionService.getTransaction(transactionId);
-//       setTransaction(result);
-
-//       // Check if QR code exists in the transaction
-//       if (result.salesReceiptQR) {
-//         setQrCode(result.salesReceiptQR);
-//       } else {
-//         // If no QR, generate one
-//         const qrResult = await TransactionService.generateSalesQR(transactionId);
-//         setTransaction(qrResult.transaction);
-//         if (qrResult.qrCode) {
-//           setQrCode(qrResult.qrCode);
-//         }
-//       }
-//     } catch (error) {
-//       console.error('Error fetching receipt:', error);
-//       Alert.alert('Error', 'Failed to load receipt');
-//     } finally {
-//       setLoading(false);
-//     }
-//   };
-
-//   const handleShare = async () => {
-//     try {
-//       await Share.share({
-//         message: `Transaction ${transaction.transactionNumber}\nTotal: ${formatCurrency(transaction.totalAmount)}\nDate: ${formatDateTime(transaction.createdAt)}`,
-//         title: 'Receipt',
-//       });
-//     } catch (error) {
-//       Alert.alert('Error', 'Failed to share receipt');
-//     }
-//   };
-
-//   const handlePrint = () => {
-//     // In a real app, you would implement printing
-//     Alert.alert('Print', 'Print functionality coming soon');
-//   };
-
-//   const handleDownload = () => {
-//     // In a real app, you would implement download
-//     Alert.alert('Download', 'Download functionality coming soon');
-//   };
-
-//   if (loading) {
-//     return (
-//       <SafeAreaView style={styles.loadingContainer}>
-//         <ActivityIndicator size="large" color={Colors.primary} />
-//         <Text style={styles.loadingText}>Loading receipt...</Text>
-//       </SafeAreaView>
-//     );
-//   }
-
-//   if (!transaction) {
-//     return (
-//       <SafeAreaView style={styles.errorContainer}>
-//         <Text style={styles.errorText}>Receipt not found</Text>
-//         <TouchableOpacity style={styles.closeButton} onPress={() => router.back()}>
-//           <Text style={styles.closeButtonText}>Close</Text>
-//         </TouchableOpacity>
-//       </SafeAreaView>
-//     );
-//   }
-
-//   return (
-//     <SafeAreaView style={styles.container}>
-//       <View style={styles.header}>
-//         <TouchableOpacity onPress={() => router.back()} style={styles.headerButton}>
-//           <X size={24} color={Colors.gray700} />
-//         </TouchableOpacity>
-//         <Text style={styles.headerTitle}>Receipt Preview</Text>
-//         <View style={{ width: 40 }} />
-//       </View>
-
-//       <ScrollView
-//         style={styles.scrollView}
-//         contentContainerStyle={styles.scrollContent}
-//       >
-//         <View style={styles.receiptCard}>
-//           {/* Store Info */}
-//           <View style={styles.receiptHeader}>
-//             <Text style={styles.receiptTitle}>Sales Receipt</Text>
-//             <Text style={styles.receiptSubtitle}>{transaction.storeId?.name || 'Store'}</Text>
-//           </View>
-
-//           {/* Transaction Details */}
-//           <View style={styles.receiptSection}>
-//             <View style={styles.receiptRow}>
-//               <Text style={styles.receiptLabel}>Transaction</Text>
-//               <Text style={styles.receiptValue}>{transaction.transactionNumber}</Text>
-//             </View>
-//             <View style={styles.receiptRow}>
-//               <Text style={styles.receiptLabel}>Date</Text>
-//               <Text style={styles.receiptValue}>{formatDateTime(transaction.createdAt)}</Text>
-//             </View>
-//             <View style={styles.receiptRow}>
-//               <Text style={styles.receiptLabel}>Attendant</Text>
-//               <Text style={styles.receiptValue}>
-//                 {transaction.salesAttendantId?.firstName} {transaction.salesAttendantId?.lastName || 'N/A'}
-//               </Text>
-//             </View>
-//           </View>
-
-//           {/* Items */}
-//           <View style={styles.receiptSection}>
-//             <Text style={styles.sectionTitle}>Items</Text>
-//             {transaction.items?.map((item, index) => (
-//               <View key={index} style={styles.itemRow}>
-//                 <View style={styles.itemInfo}>
-//                   <Text style={styles.itemName}>{item.name}</Text>
-//                   <Text style={styles.itemDetail}>
-//                     {item.quantity} × {formatCurrency(item.unitPrice)}
-//                   </Text>
-//                 </View>
-//                 <Text style={styles.itemTotal}>
-//                   {formatCurrency(item.totalPrice)}
-//                 </Text>
-//               </View>
-//             ))}
-//           </View>
-
-//           {/* Totals */}
-//           <View style={[styles.receiptSection, styles.totalsSection]}>
-//             <View style={styles.totalRow}>
-//               <Text style={styles.totalLabel}>Subtotal</Text>
-//               <Text style={styles.totalValue}>{formatCurrency(transaction.subtotal)}</Text>
-//             </View>
-//             <View style={styles.totalRow}>
-//               <Text style={styles.totalLabel}>Tax</Text>
-//               <Text style={styles.totalValue}>{formatCurrency(transaction.taxTotal)}</Text>
-//             </View>
-//             <View style={[styles.totalRow, styles.grandTotalRow]}>
-//               <Text style={styles.grandTotalLabel}>Total</Text>
-//               <Text style={styles.grandTotalValue}>{formatCurrency(transaction.totalAmount)}</Text>
-//             </View>
-//           </View>
-
-//           {/* QR Code - FIXED: Show actual QR image */}
-//           <View style={styles.qrSection}>
-//             <Text style={styles.qrTitle}>Scan QR Code</Text>
-//             {qrCode ? (
-//               <View style={styles.qrContainer}>
-//                 <Image
-//                   source={{ uri: qrCode }}
-//                   style={styles.qrImage}
-//                   resizeMode="contain"
-//                   onError={(error) => {
-//                     console.error('QR Image loading error:', error);
-//                     // Fallback: Show QR placeholder
-//                     setQrCode(null);
-//                   }}
-//                 />
-//                 <Text style={styles.qrHint}>
-//                   Scan this QR code for payment
-//                 </Text>
-//               </View>
-//             ) : (
-//               <View style={styles.qrPlaceholder}>
-//                 <QrCode size={64} color={Colors.gray400} />
-//                 <Text style={styles.qrPlaceholderText}>
-//                   QR code not available
-//                 </Text>
-//               </View>
-//             )}
-//           </View>
-
-//           {/* Footer */}
-//           <View style={styles.receiptFooter}>
-//             <Text style={styles.footerText}>Thank you for your purchase!</Text>
-//           </View>
-//         </View>
-//       </ScrollView>
-
-//       {/* Action Buttons */}
-//       <View style={styles.actionsContainer}>
-//         <TouchableOpacity style={[styles.actionButton, styles.shareButton]} onPress={handleShare}>
-//           <Share2 size={20} color={Colors.white} />
-//           <Text style={styles.actionButtonText}>Share</Text>
-//         </TouchableOpacity>
-//         <TouchableOpacity style={[styles.actionButton, styles.downloadButton]} onPress={handleDownload}>
-//           <Download size={20} color={Colors.white} />
-//           <Text style={styles.actionButtonText}>Download</Text>
-//         </TouchableOpacity>
-//         <TouchableOpacity style={[styles.actionButton, styles.printButton]} onPress={handlePrint}>
-//           <Printer size={20} color={Colors.white} />
-//           <Text style={styles.actionButtonText}>Print</Text>
-//         </TouchableOpacity>
-//       </View>
-//     </SafeAreaView>
-//   );
-// }
-
-// const styles = StyleSheet.create({
-//   container: {
-//     flex: 1,
-//     backgroundColor: Colors.gray50,
-//   },
-//   loadingContainer: {
-//     flex: 1,
-//     justifyContent: 'center',
-//     alignItems: 'center',
-//     backgroundColor: Colors.white,
-//   },
-//   loadingText: {
-//     marginTop: Spacing.md,
-//     color: Colors.gray500,
-//   },
-//   errorContainer: {
-//     flex: 1,
-//     justifyContent: 'center',
-//     alignItems: 'center',
-//     backgroundColor: Colors.white,
-//   },
-//   errorText: {
-//     fontSize: Typography.lg,
-//     color: Colors.gray700,
-//   },
-//   closeButton: {
-//     marginTop: Spacing.md,
-//     padding: Spacing.md,
-//     backgroundColor: Colors.primary,
-//     borderRadius: BorderRadius.lg,
-//   },
-//   closeButtonText: {
-//     color: Colors.white,
-//     fontWeight: '600',
-//   },
-//   header: {
-//     flexDirection: 'row',
-//     justifyContent: 'space-between',
-//     alignItems: 'center',
-//     paddingHorizontal: Spacing.md,
-//     paddingVertical: Spacing.md,
-//     backgroundColor: Colors.white,
-//     borderBottomWidth: 1,
-//     borderBottomColor: Colors.gray200,
-//   },
-//   headerButton: {
-//     padding: Spacing.sm,
-//   },
-//   headerTitle: {
-//     fontSize: Typography.lg,
-//     fontWeight: '600',
-//     color: Colors.gray900,
-//   },
-//   scrollView: {
-//     flex: 1,
-//   },
-//   scrollContent: {
-//     padding: Spacing.md,
-//   },
-//   receiptCard: {
-//     backgroundColor: Colors.white,
-//     borderRadius: BorderRadius.lg,
-//     padding: Spacing['2xl'],
-//     ...Shadows.md,
-//   },
-//   receiptHeader: {
-//     alignItems: 'center',
-//     borderBottomWidth: 1,
-//     borderBottomColor: Colors.gray200,
-//     paddingBottom: Spacing.md,
-//     marginBottom: Spacing.md,
-//   },
-//   receiptTitle: {
-//     fontSize: Typography['2xl'],
-//     fontWeight: 'bold',
-//     color: Colors.gray900,
-//   },
-//   receiptSubtitle: {
-//     fontSize: Typography.md,
-//     color: Colors.gray500,
-//     marginTop: Spacing.xs,
-//   },
-//   receiptSection: {
-//     marginBottom: Spacing.md,
-//     paddingBottom: Spacing.md,
-//     borderBottomWidth: 1,
-//     borderBottomColor: Colors.gray100,
-//   },
-//   receiptRow: {
-//     flexDirection: 'row',
-//     justifyContent: 'space-between',
-//     paddingVertical: 4,
-//   },
-//   receiptLabel: {
-//     fontSize: Typography.sm,
-//     color: Colors.gray500,
-//   },
-//   receiptValue: {
-//     fontSize: Typography.sm,
-//     fontWeight: '500',
-//     color: Colors.gray900,
-//   },
-//   sectionTitle: {
-//     fontSize: Typography.md,
-//     fontWeight: '600',
-//     color: Colors.gray900,
-//     marginBottom: Spacing.sm,
-//   },
-//   itemRow: {
-//     flexDirection: 'row',
-//     justifyContent: 'space-between',
-//     paddingVertical: 6,
-//     borderBottomWidth: 1,
-//     borderBottomColor: Colors.gray50,
-//   },
-//   itemInfo: {
-//     flex: 1,
-//   },
-//   itemName: {
-//     fontSize: Typography.sm,
-//     color: Colors.gray900,
-//   },
-//   itemDetail: {
-//     fontSize: Typography.xs,
-//     color: Colors.gray500,
-//   },
-//   itemTotal: {
-//     fontSize: Typography.sm,
-//     fontWeight: '500',
-//     color: Colors.gray900,
-//   },
-//   totalsSection: {
-//     borderBottomWidth: 0,
-//   },
-//   totalRow: {
-//     flexDirection: 'row',
-//     justifyContent: 'space-between',
-//     paddingVertical: 2,
-//   },
-//   totalLabel: {
-//     fontSize: Typography.sm,
-//     color: Colors.gray600,
-//   },
-//   totalValue: {
-//     fontSize: Typography.sm,
-//     color: Colors.gray900,
-//   },
-//   grandTotalRow: {
-//     borderTopWidth: 1,
-//     borderTopColor: Colors.gray200,
-//     paddingTop: Spacing.sm,
-//     marginTop: Spacing.xs,
-//   },
-//   grandTotalLabel: {
-//     fontSize: Typography.lg,
-//     fontWeight: 'bold',
-//     color: Colors.gray900,
-//   },
-//   grandTotalValue: {
-//     fontSize: Typography.lg,
-//     fontWeight: 'bold',
-//     color: Colors.primary,
-//   },
-//   qrSection: {
-//     alignItems: 'center',
-//     marginTop: Spacing.md,
-//     paddingTop: Spacing.md,
-//     borderTopWidth: 1,
-//     borderTopColor: Colors.gray200,
-//   },
-//   qrTitle: {
-//     fontSize: Typography.sm,
-//     fontWeight: '500',
-//     color: Colors.gray600,
-//     marginBottom: Spacing.sm,
-//   },
-//   qrContainer: {
-//     alignItems: 'center',
-//   },
-//   qrImage: {
-//     width: width * 0.5,
-//     height: width * 0.5,
-//     backgroundColor: Colors.white,
-//     borderRadius: BorderRadius.lg,
-//   },
-//   qrHint: {
-//     fontSize: Typography.xs,
-//     color: Colors.gray500,
-//     marginTop: Spacing.sm,
-//   },
-//   qrPlaceholder: {
-//     width: width * 0.5,
-//     height: width * 0.5,
-//     backgroundColor: Colors.gray100,
-//     borderRadius: BorderRadius.lg,
-//     alignItems: 'center',
-//     justifyContent: 'center',
-//   },
-//   qrPlaceholderText: {
-//     marginTop: Spacing.sm,
-//     color: Colors.gray500,
-//     fontSize: Typography.sm,
-//   },
-//   receiptFooter: {
-//     marginTop: Spacing.md,
-//     paddingTop: Spacing.md,
-//     borderTopWidth: 1,
-//     borderTopColor: Colors.gray200,
-//     alignItems: 'center',
-//   },
-//   footerText: {
-//     fontSize: Typography.md,
-//     color: Colors.gray600,
-//   },
-//   actionsContainer: {
-//     flexDirection: 'row',
-//     padding: Spacing.md,
-//     backgroundColor: Colors.white,
-//     borderTopWidth: 1,
-//     borderTopColor: Colors.gray200,
-//   },
-//   actionButton: {
-//     flex: 1,
-//     flexDirection: 'row',
-//     alignItems: 'center',
-//     justifyContent: 'center',
-//     paddingVertical: Spacing.md,
-//     borderRadius: BorderRadius.lg,
-//     marginHorizontal: 4,
-//   },
-//   shareButton: {
-//     backgroundColor: Colors.primary,
-//   },
-//   downloadButton: {
-//     backgroundColor: Colors.success,
-//   },
-//   printButton: {
-//     backgroundColor: Colors.warning,
-//   },
-//   actionButtonText: {
-//     color: Colors.white,
-//     fontWeight: '600',
-//     marginLeft: Spacing.xs,
-//   },
-// });
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-// import React, { useState, useEffect } from "react";
-// import {
-//   View,
-//   Text,
-//   StyleSheet,
-//   ScrollView,
-//   TouchableOpacity,
-//   Image,
-//   ActivityIndicator,
-//   Alert,
-//   Share,
-//   Dimensions,
-// } from "react-native";
-// import { SafeAreaView } from "react-native-safe-area-context";
-// import { useRouter, useLocalSearchParams } from "expo-router";
-// import { X, Download, Share2, Printer, QrCode } from "lucide-react-native";
-// import TransactionService from "../../../services/transactionService";
-// import {
-//   Colors,
-//   Spacing,
-//   Typography,
-//   BorderRadius,
-//   Shadows,
-// } from "../../../constants/theme";
-// import { formatCurrency, formatDateTime } from "../../../utils/formatters";
-
-// const { width } = Dimensions.get("window");
-
-// export default function ReceiptPreview() {
-//   const router = useRouter();
-//   const { transactionId } = useLocalSearchParams();
-//   const [loading, setLoading] = useState(true);
-//   const [transaction, setTransaction] = useState(null);
-//   const [qrCode, setQrCode] = useState(null);
-
-//   useEffect(() => {
-//     if (transactionId) {
-//       fetchReceipt();
-//     }
-//   }, [transactionId]);
-
-//   const fetchReceipt = async () => {
-//     try {
-//       setLoading(true);
-//       const result = await TransactionService.getTransaction(transactionId);
-//       setTransaction(result);
-
-//       if (result.salesReceiptQR) {
-//         setQrCode(result.salesReceiptQR);
-//       } else {
-//         const qrResult =
-//           await TransactionService.generateSalesQR(transactionId);
-//         setTransaction(qrResult.transaction);
-//         if (qrResult.qrCode) {
-//           setQrCode(qrResult.qrCode);
-//         }
-//       }
-//     } catch (error) {
-//       console.error("Error fetching receipt:", error);
-//       Alert.alert("Error", "Failed to load receipt");
-//     } finally {
-//       setLoading(false);
-//     }
-//   };
-
-//   const handleShare = async () => {
-//     try {
-//       await Share.share({
-//         message: `Transaction ${transaction.transactionNumber}\nTotal: ${formatCurrency(transaction.totalAmount)}\nDate: ${formatDateTime(transaction.createdAt)}`,
-//         title: "Receipt",
-//       });
-//     } catch (error) {
-//       Alert.alert("Error", "Failed to share receipt");
-//     }
-//   };
-
-//   const handlePrint = () => {
-//     Alert.alert("Print", "Print functionality coming soon");
-//   };
-
-//   const handleDownload = () => {
-//     Alert.alert("Download", "Download functionality coming soon");
-//   };
-
-//   if (loading) {
-//     return (
-//       <SafeAreaView style={styles.loadingContainer}>
-//         <ActivityIndicator size="large" color={Colors.primary} />
-//         <Text style={styles.loadingText}>Loading receipt...</Text>
-//       </SafeAreaView>
-//     );
-//   }
-
-//   if (!transaction) {
-//     return (
-//       <SafeAreaView style={styles.errorContainer}>
-//         <Text style={styles.errorText}>Receipt not found</Text>
-//         <TouchableOpacity
-//           style={styles.closeButton}
-//           onPress={() => router.back()}
-//         >
-//           <Text style={styles.closeButtonText}>Close</Text>
-//         </TouchableOpacity>
-//       </SafeAreaView>
-//     );
-//   }
-
-//   return (
-//     <SafeAreaView style={styles.container}>
-//       <View style={styles.header}>
-//         <TouchableOpacity
-//           onPress={() => router.back()}
-//           style={styles.headerButton}
-//         >
-//           <X size={24} color={Colors.gray700} />
-//         </TouchableOpacity>
-//         <Text style={styles.headerTitle}>Receipt Preview</Text>
-//         <View style={{ width: 40 }} />
-//       </View>
-
-//       <ScrollView
-//         style={styles.scrollView}
-//         contentContainerStyle={styles.scrollContent}
-//       >
-//         <View style={styles.receiptCard}>
-//           <View style={styles.receiptHeader}>
-//             <Text style={styles.receiptTitle}>Sales Receipt</Text>
-//             <Text style={styles.receiptSubtitle}>
-//               {transaction.storeId?.name || "Store"}
-//             </Text>
-//           </View>
-
-//           <View style={styles.receiptSection}>
-//             <View style={styles.receiptRow}>
-//               <Text style={styles.receiptLabel}>Transaction</Text>
-//               <Text style={styles.receiptValue}>
-//                 {transaction.transactionNumber}
-//               </Text>
-//             </View>
-//             <View style={styles.receiptRow}>
-//               <Text style={styles.receiptLabel}>Date</Text>
-//               <Text style={styles.receiptValue}>
-//                 {formatDateTime(transaction.createdAt)}
-//               </Text>
-//             </View>
-//             <View style={styles.receiptRow}>
-//               <Text style={styles.receiptLabel}>Attendant</Text>
-//               <Text style={styles.receiptValue}>
-//                 {transaction.salesAttendantId?.firstName}{" "}
-//                 {transaction.salesAttendantId?.lastName || "N/A"}
-//               </Text>
-//             </View>
-//           </View>
-
-//           <View style={styles.receiptSection}>
-//             <Text style={styles.sectionTitle}>Items</Text>
-//             {transaction.items?.map((item, index) => (
-//               <View key={index} style={styles.itemRow}>
-//                 <View style={styles.itemInfo}>
-//                   <Text style={styles.itemName}>{item.name}</Text>
-//                   <Text style={styles.itemDetail}>
-//                     {item.quantity} × {formatCurrency(item.unitPrice)}
-//                   </Text>
-//                 </View>
-//                 <Text style={styles.itemTotal}>
-//                   {formatCurrency(item.totalPrice)}
-//                 </Text>
-//               </View>
-//             ))}
-//           </View>
-
-//           <View style={[styles.receiptSection, styles.totalsSection]}>
-//             <View style={styles.totalRow}>
-//               <Text style={styles.totalLabel}>Subtotal</Text>
-//               <Text style={styles.totalValue}>
-//                 {formatCurrency(transaction.subtotal)}
-//               </Text>
-//             </View>
-//             <View style={styles.totalRow}>
-//               <Text style={styles.totalLabel}>Tax</Text>
-//               <Text style={styles.totalValue}>
-//                 {formatCurrency(transaction.taxTotal)}
-//               </Text>
-//             </View>
-//             <View style={[styles.totalRow, styles.grandTotalRow]}>
-//               <Text style={styles.grandTotalLabel}>Total</Text>
-//               <Text style={styles.grandTotalValue}>
-//                 {formatCurrency(transaction.totalAmount)}
-//               </Text>
-//             </View>
-//           </View>
-
-//           <View style={styles.qrSection}>
-//             <Text style={styles.qrTitle}>Scan QR Code</Text>
-//             {qrCode ? (
-//               <View style={styles.qrContainer}>
-//                 <Image
-//                   source={{ uri: qrCode }}
-//                   style={styles.qrImage}
-//                   resizeMode="contain"
-//                   onError={(error) => {
-//                     console.error("QR Image loading error:", error);
-//                     setQrCode(null);
-//                   }}
-//                 />
-//                 <Text style={styles.qrHint}>Scan this QR code for payment</Text>
-//               </View>
-//             ) : (
-//               <View style={styles.qrPlaceholder}>
-//                 <QrCode size={64} color={Colors.gray400} />
-//                 <Text style={styles.qrPlaceholderText}>
-//                   QR code not available
-//                 </Text>
-//               </View>
-//             )}
-//           </View>
-
-//           <View style={styles.receiptFooter}>
-//             <Text style={styles.footerText}>Thank you for your purchase!</Text>
-//           </View>
-//         </View>
-//       </ScrollView>
-
-//       <View style={styles.actionsContainer}>
-//         <TouchableOpacity
-//           style={[styles.actionButton, styles.shareButton]}
-//           onPress={handleShare}
-//         >
-//           <Share2 size={20} color={Colors.white} />
-//           <Text style={styles.actionButtonText}>Share</Text>
-//         </TouchableOpacity>
-//         <TouchableOpacity
-//           style={[styles.actionButton, styles.downloadButton]}
-//           onPress={handleDownload}
-//         >
-//           <Download size={20} color={Colors.white} />
-//           <Text style={styles.actionButtonText}>Download</Text>
-//         </TouchableOpacity>
-//         <TouchableOpacity
-//           style={[styles.actionButton, styles.printButton]}
-//           onPress={handlePrint}
-//         >
-//           <Printer size={20} color={Colors.white} />
-//           <Text style={styles.actionButtonText}>Print</Text>
-//         </TouchableOpacity>
-//       </View>
-//     </SafeAreaView>
-//   );
-// }
-
-// const styles = StyleSheet.create({
-//   container: { flex: 1, backgroundColor: Colors.gray50 },
-//   loadingContainer: {
-//     flex: 1,
-//     justifyContent: "center",
-//     alignItems: "center",
-//     backgroundColor: Colors.white,
-//   },
-//   loadingText: { marginTop: Spacing.md, color: Colors.gray500 },
-//   errorContainer: {
-//     flex: 1,
-//     justifyContent: "center",
-//     alignItems: "center",
-//     backgroundColor: Colors.white,
-//   },
-//   errorText: { fontSize: Typography.lg, color: Colors.gray700 },
-//   closeButton: {
-//     marginTop: Spacing.md,
-//     padding: Spacing.md,
-//     backgroundColor: Colors.primary,
-//     borderRadius: BorderRadius.lg,
-//   },
-//   closeButtonText: { color: Colors.white, fontWeight: "600" },
-//   header: {
-//     flexDirection: "row",
-//     justifyContent: "space-between",
-//     alignItems: "center",
-//     paddingHorizontal: Spacing.md,
-//     paddingVertical: Spacing.md,
-//     backgroundColor: Colors.white,
-//     borderBottomWidth: 1,
-//     borderBottomColor: Colors.gray200,
-//   },
-//   headerButton: { padding: Spacing.sm },
-//   headerTitle: {
-//     fontSize: Typography.lg,
-//     fontWeight: "600",
-//     color: Colors.gray900,
-//   },
-//   scrollView: { flex: 1 },
-//   scrollContent: { padding: Spacing.md },
-//   receiptCard: {
-//     backgroundColor: Colors.white,
-//     borderRadius: BorderRadius.lg,
-//     padding: Spacing["2xl"],
-//     ...Shadows.md,
-//   },
-//   receiptHeader: {
-//     alignItems: "center",
-//     borderBottomWidth: 1,
-//     borderBottomColor: Colors.gray200,
-//     paddingBottom: Spacing.md,
-//     marginBottom: Spacing.md,
-//   },
-//   receiptTitle: {
-//     fontSize: Typography["2xl"],
-//     fontWeight: "bold",
-//     color: Colors.gray900,
-//   },
-//   receiptSubtitle: {
-//     fontSize: Typography.md,
-//     color: Colors.gray500,
-//     marginTop: Spacing.xs,
-//   },
-//   receiptSection: {
-//     marginBottom: Spacing.md,
-//     paddingBottom: Spacing.md,
-//     borderBottomWidth: 1,
-//     borderBottomColor: Colors.gray100,
-//   },
-//   receiptRow: {
-//     flexDirection: "row",
-//     justifyContent: "space-between",
-//     paddingVertical: 4,
-//   },
-//   receiptLabel: { fontSize: Typography.sm, color: Colors.gray500 },
-//   receiptValue: {
-//     fontSize: Typography.sm,
-//     fontWeight: "500",
-//     color: Colors.gray900,
-//   },
-//   sectionTitle: {
-//     fontSize: Typography.md,
-//     fontWeight: "600",
-//     color: Colors.gray900,
-//     marginBottom: Spacing.sm,
-//   },
-//   itemRow: {
-//     flexDirection: "row",
-//     justifyContent: "space-between",
-//     paddingVertical: 6,
-//     borderBottomWidth: 1,
-//     borderBottomColor: Colors.gray50,
-//   },
-//   itemInfo: { flex: 1 },
-//   itemName: { fontSize: Typography.sm, color: Colors.gray900 },
-//   itemDetail: { fontSize: Typography.xs, color: Colors.gray500 },
-//   itemTotal: {
-//     fontSize: Typography.sm,
-//     fontWeight: "500",
-//     color: Colors.gray900,
-//   },
-//   totalsSection: { borderBottomWidth: 0 },
-//   totalRow: {
-//     flexDirection: "row",
-//     justifyContent: "space-between",
-//     paddingVertical: 2,
-//   },
-//   totalLabel: { fontSize: Typography.sm, color: Colors.gray600 },
-//   totalValue: { fontSize: Typography.sm, color: Colors.gray900 },
-//   grandTotalRow: {
-//     borderTopWidth: 1,
-//     borderTopColor: Colors.gray200,
-//     paddingTop: Spacing.sm,
-//     marginTop: Spacing.xs,
-//   },
-//   grandTotalLabel: {
-//     fontSize: Typography.lg,
-//     fontWeight: "bold",
-//     color: Colors.gray900,
-//   },
-//   grandTotalValue: {
-//     fontSize: Typography.lg,
-//     fontWeight: "bold",
-//     color: Colors.primary,
-//   },
-//   qrSection: {
-//     alignItems: "center",
-//     marginTop: Spacing.md,
-//     paddingTop: Spacing.md,
-//     borderTopWidth: 1,
-//     borderTopColor: Colors.gray200,
-//   },
-//   qrTitle: {
-//     fontSize: Typography.sm,
-//     fontWeight: "500",
-//     color: Colors.gray600,
-//     marginBottom: Spacing.sm,
-//   },
-//   qrContainer: { alignItems: "center" },
-//   qrImage: {
-//     width: width * 0.5,
-//     height: width * 0.5,
-//     backgroundColor: Colors.white,
-//     borderRadius: BorderRadius.lg,
-//   },
-//   qrHint: {
-//     fontSize: Typography.xs,
-//     color: Colors.gray500,
-//     marginTop: Spacing.sm,
-//   },
-//   qrPlaceholder: {
-//     width: width * 0.5,
-//     height: width * 0.5,
-//     backgroundColor: Colors.gray100,
-//     borderRadius: BorderRadius.lg,
-//     alignItems: "center",
-//     justifyContent: "center",
-//   },
-//   qrPlaceholderText: {
-//     marginTop: Spacing.sm,
-//     color: Colors.gray500,
-//     fontSize: Typography.sm,
-//   },
-//   receiptFooter: {
-//     marginTop: Spacing.md,
-//     paddingTop: Spacing.md,
-//     borderTopWidth: 1,
-//     borderTopColor: Colors.gray200,
-//     alignItems: "center",
-//   },
-//   footerText: { fontSize: Typography.md, color: Colors.gray600 },
-//   actionsContainer: {
-//     flexDirection: "row",
-//     padding: Spacing.md,
-//     backgroundColor: Colors.white,
-//     borderTopWidth: 1,
-//     borderTopColor: Colors.gray200,
-//   },
-//   actionButton: {
-//     flex: 1,
-//     flexDirection: "row",
-//     alignItems: "center",
-//     justifyContent: "center",
-//     paddingVertical: Spacing.md,
-//     borderRadius: BorderRadius.lg,
-//     marginHorizontal: 4,
-//   },
-//   shareButton: { backgroundColor: Colors.primary },
-//   downloadButton: { backgroundColor: Colors.success },
-//   printButton: { backgroundColor: Colors.warning },
-//   actionButtonText: {
-//     color: Colors.white,
-//     fontWeight: "600",
-//     marginLeft: Spacing.xs,
-//   },
-// });
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-// // screens/receipts/[id]/preview.jsx
-// import React, { useState, useEffect } from 'react';
-// import {
-//   View,
-//   Text,
-//   ScrollView,
-//   ActivityIndicator,
-//   Alert,
-//   TouchableOpacity,
-//   StyleSheet,
-//   Image,
-//   Dimensions,
-//   Share,
-//   Platform,
-// } from 'react-native';
-// import { useLocalSearchParams, useRouter } from 'expo-router';
-// import { ArrowLeft, Download, Share2, Printer, QrCode } from 'lucide-react-native';
-// import ReceiptService from '../../../services/receiptService';
-// import { formatCurrency, formatDateTime } from '../../../utils/formatters';
-// import { Colors, Spacing, Typography, BorderRadius, Shadows } from '../../../constants/theme';
-
-// const { width } = Dimensions.get('window');
-
-// export default function ReceiptPreview() {
-//   const { id } = useLocalSearchParams();
-//   const router = useRouter();
-//   const [loading, setLoading] = useState(true);
-//   const [receipt, setReceipt] = useState(null);
-//   const [receiptData, setReceiptData] = useState(null);
-//   const [formattedText, setFormattedText] = useState('');
-//   const [qrCodeImage, setQrCodeImage] = useState(null);
-
-//   useEffect(() => {
-//     fetchReceiptPreview();
-//   }, [id]);
-
-//   const fetchReceiptPreview = async () => {
-//     try {
-//       const data = await ReceiptService.getReceiptPreview(id);
-//       setReceipt(data.receipt);
-//       setReceiptData(data.receiptData);
-//       setFormattedText(data.formattedText || '');
-      
-//       // Handle QR Code
-//       if (data.receipt?.qrCode) {
-//         const qr = data.receipt.qrCode;
-//         if (qr.startsWith('data:image')) {
-//           setQrCodeImage(qr);
-//         } else if (qr.length > 100) {
-//           setQrCodeImage(`data:image/png;base64,${qr}`);
-//         } else {
-//           setQrCodeImage(qr);
-//         }
-//       }
-//     } catch (error) {
-//       console.error('Error fetching receipt preview:', error);
-//       Alert.alert('Error', 'Failed to load receipt preview');
-//     } finally {
-//       setLoading(false);
-//     }
-//   };
-
-//   const handlePrint = async () => {
-//     try {
-//       await ReceiptService.markAsPrinted(id);
-//       Alert.alert('Success', 'Receipt marked as printed');
-//       fetchReceiptPreview();
-//     } catch (error) {
-//       Alert.alert('Error', 'Failed to mark receipt as printed');
-//     }
-//   };
-
-//   const handleDownload = async () => {
-//     try {
-//       await ReceiptService.downloadReceipt(id);
-//       Alert.alert('Success', 'Receipt downloaded successfully');
-//     } catch (error) {
-//       Alert.alert('Error', 'Failed to download receipt');
-//     }
-//   };
-
-//   const handleShare = async () => {
-//     try {
-//       await Share.share({
-//         message: formattedText || `Receipt: ${receipt?.receiptNumber || ''}`,
-//         title: 'Receipt',
-//       });
-//     } catch (error) {
-//       Alert.alert('Error', 'Failed to share receipt');
-//     }
-//   };
-
-//   if (loading) {
-//     return (
-//       <View style={styles.loadingContainer}>
-//         <ActivityIndicator size="large" color={Colors.primary} />
-//         <Text style={styles.loadingText}>Loading receipt preview...</Text>
-//       </View>
-//     );
-//   }
-
-//   if (!receipt) {
-//     return (
-//       <View style={styles.errorContainer}>
-//         <Text style={styles.errorText}>Receipt not found</Text>
-//         <TouchableOpacity style={styles.closeButton} onPress={() => router.back()}>
-//           <Text style={styles.closeButtonText}>Close</Text>
-//         </TouchableOpacity>
-//       </View>
-//     );
-//   }
-
-//   const getTypeIcon = (type) => {
-//     const icons = {
-//       SALES: '📄',
-//       PAYMENT: '💰',
-//       INVOICE: '📋',
-//       FINAL: '✅',
-//     };
-//     return icons[type] || '📄';
-//   };
-
-//   return (
-//     <View style={styles.container}>
-//       <View style={styles.header}>
-//         <TouchableOpacity onPress={() => router.back()} style={styles.headerButton}>
-//           <ArrowLeft size={24} color={Colors.gray700} />
-//         </TouchableOpacity>
-//         <Text style={styles.headerTitle}>Receipt Preview</Text>
-//         <TouchableOpacity onPress={handleShare} style={styles.headerButton}>
-//           <Share2 size={20} color={Colors.gray700} />
-//         </TouchableOpacity>
-//       </View>
-
-//       <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
-//         {formattedText ? (
-//           <View style={styles.receiptCard}>
-//             <Text style={styles.receiptText}>{formattedText}</Text>
-//           </View>
-//         ) : (
-//           <View style={styles.receiptCard}>
-//             <View style={styles.receiptHeader}>
-//               <Text style={styles.receiptTitle}>
-//                 {getTypeIcon(receipt.type)} {receipt.type} Receipt
-//               </Text>
-//               <Text style={styles.receiptSubtitle}>
-//                 {receipt.storeId?.name || 'Store'}
-//               </Text>
-//               <Text style={styles.receiptNumber}>{receipt.receiptNumber}</Text>
-//             </View>
-
-//             {receiptData && (
-//               <>
-//                 <View style={styles.divider} />
-
-//                 {/* Store Info */}
-//                 {receiptData.store && (
-//                   <View style={styles.receiptSection}>
-//                     <Text style={styles.sectionTitle}>Store</Text>
-//                     <Text style={styles.storeName}>{receiptData.store.name}</Text>
-//                     {receiptData.store.address && (
-//                       <Text style={styles.storeDetail}>{receiptData.store.address}</Text>
-//                     )}
-//                     {receiptData.store.phone && (
-//                       <Text style={styles.storeDetail}>📞 {receiptData.store.phone}</Text>
-//                     )}
-//                     {receiptData.store.email && (
-//                       <Text style={styles.storeDetail}>✉️ {receiptData.store.email}</Text>
-//                     )}
-//                   </View>
-//                 )}
-
-//                 <View style={styles.divider} />
-
-//                 {/* Transaction Info */}
-//                 <View style={styles.receiptSection}>
-//                   <Text style={styles.sectionTitle}>Transaction</Text>
-//                   <View style={styles.receiptRow}>
-//                     <Text style={styles.receiptLabel}>Number</Text>
-//                     <Text style={styles.receiptValue}>{receiptData.transaction?.number}</Text>
-//                   </View>
-//                   {receiptData.transaction?.invoiceNumber && (
-//                     <View style={styles.receiptRow}>
-//                       <Text style={styles.receiptLabel}>Invoice</Text>
-//                       <Text style={styles.receiptValue}>{receiptData.transaction.invoiceNumber}</Text>
-//                     </View>
-//                   )}
-//                   <View style={styles.receiptRow}>
-//                     <Text style={styles.receiptLabel}>Date</Text>
-//                     <Text style={styles.receiptValue}>
-//                       {formatDateTime(receiptData.transaction?.createdAt)}
-//                     </Text>
-//                   </View>
-//                   <View style={styles.receiptRow}>
-//                     <Text style={styles.receiptLabel}>Status</Text>
-//                     <Text style={[styles.receiptValue, styles.statusValue]}>
-//                       {receiptData.transaction?.status}
-//                     </Text>
-//                   </View>
-//                 </View>
-
-//                 <View style={styles.divider} />
-
-//                 {/* Items */}
-//                 {receiptData.items && receiptData.items.length > 0 && (
-//                   <View style={styles.receiptSection}>
-//                     <Text style={styles.sectionTitle}>Items ({receiptData.items.length})</Text>
-//                     {receiptData.items.map((item, index) => (
-//                       <View key={index} style={styles.itemRow}>
-//                         <View style={styles.itemInfo}>
-//                           <Text style={styles.itemName}>{item.name}</Text>
-//                           <Text style={styles.itemDetail}>
-//                             {item.quantity} × {formatCurrency(item.unitPrice)}
-//                           </Text>
-//                           {item.sku && (
-//                             <Text style={styles.itemSku}>SKU: {item.sku}</Text>
-//                           )}
-//                         </View>
-//                         <Text style={styles.itemTotal}>{formatCurrency(item.totalPrice)}</Text>
-//                       </View>
-//                     ))}
-//                   </View>
-//                 )}
-
-//                 <View style={styles.divider} />
-
-//                 {/* Summary */}
-//                 {receiptData.summary && (
-//                   <View style={styles.receiptSection}>
-//                     <View style={styles.summaryRow}>
-//                       <Text style={styles.summaryLabel}>Subtotal</Text>
-//                       <Text style={styles.summaryValue}>
-//                         {formatCurrency(receiptData.summary.subtotal)}
-//                       </Text>
-//                     </View>
-//                     <View style={styles.summaryRow}>
-//                       <Text style={styles.summaryLabel}>Tax</Text>
-//                       <Text style={styles.summaryValue}>
-//                         {formatCurrency(receiptData.summary.taxTotal)}
-//                       </Text>
-//                     </View>
-//                     {receiptData.summary.discountTotal > 0 && (
-//                       <View style={styles.summaryRow}>
-//                         <Text style={styles.summaryLabel}>Discount</Text>
-//                         <Text style={[styles.summaryValue, styles.discountValue]}>
-//                           -{formatCurrency(receiptData.summary.discountTotal)}
-//                         </Text>
-//                       </View>
-//                     )}
-//                     <View style={[styles.summaryRow, styles.totalRow]}>
-//                       <Text style={styles.totalLabel}>Total</Text>
-//                       <Text style={styles.totalValue}>
-//                         {formatCurrency(receiptData.summary.totalAmount)}
-//                       </Text>
-//                     </View>
-//                     {receiptData.summary.amountPaid > 0 && (
-//                       <>
-//                         <View style={styles.summaryRow}>
-//                           <Text style={styles.summaryLabel}>Amount Paid</Text>
-//                           <Text style={styles.summaryValue}>
-//                             {formatCurrency(receiptData.summary.amountPaid)}
-//                           </Text>
-//                         </View>
-//                         {receiptData.summary.changeAmount > 0 && (
-//                           <View style={styles.summaryRow}>
-//                             <Text style={styles.summaryLabel}>Change</Text>
-//                             <Text style={styles.summaryValue}>
-//                               {formatCurrency(receiptData.summary.changeAmount)}
-//                             </Text>
-//                           </View>
-//                         )}
-//                         <View style={styles.summaryRow}>
-//                           <Text style={styles.summaryLabel}>Payment Method</Text>
-//                           <Text style={styles.summaryValue}>
-//                             {receiptData.summary.paymentMethod}
-//                           </Text>
-//                         </View>
-//                       </>
-//                     )}
-//                   </View>
-//                 )}
-
-//                 <View style={styles.divider} />
-
-//                 {/* Staff */}
-//                 {receiptData.staff && (
-//                   <View style={styles.receiptSection}>
-//                     <Text style={styles.sectionTitle}>Staff</Text>
-//                     {receiptData.staff.salesAttendant && (
-//                       <View style={styles.staffRow}>
-//                         <Text style={styles.staffRole}>Sales:</Text>
-//                         <Text style={styles.staffName}>{receiptData.staff.salesAttendant.name}</Text>
-//                       </View>
-//                     )}
-//                     {receiptData.staff.financeAttendant && (
-//                       <View style={styles.staffRow}>
-//                         <Text style={styles.staffRole}>Finance:</Text>
-//                         <Text style={styles.staffName}>{receiptData.staff.financeAttendant.name}</Text>
-//                       </View>
-//                     )}
-//                     {receiptData.staff.warehouseStaff && (
-//                       <View style={styles.staffRow}>
-//                         <Text style={styles.staffRole}>Warehouse:</Text>
-//                         <Text style={styles.staffName}>{receiptData.staff.warehouseStaff.name}</Text>
-//                       </View>
-//                     )}
-//                   </View>
-//                 )}
-
-//                 <View style={styles.divider} />
-
-//                 {/* Timeline */}
-//                 {receiptData.timeline && (
-//                   <View style={styles.receiptSection}>
-//                     <Text style={styles.sectionTitle}>Timeline</Text>
-//                     {receiptData.timeline.created && (
-//                       <View style={styles.receiptRow}>
-//                         <Text style={styles.receiptLabel}>Created</Text>
-//                         <Text style={styles.receiptValue}>
-//                           {formatDateTime(receiptData.timeline.created)}
-//                         </Text>
-//                       </View>
-//                     )}
-//                     {receiptData.timeline.sales && (
-//                       <View style={styles.receiptRow}>
-//                         <Text style={styles.receiptLabel}>Sales</Text>
-//                         <Text style={styles.receiptValue}>
-//                           {formatDateTime(receiptData.timeline.sales)}
-//                         </Text>
-//                       </View>
-//                     )}
-//                     {receiptData.timeline.payment && (
-//                       <View style={styles.receiptRow}>
-//                         <Text style={styles.receiptLabel}>Payment</Text>
-//                         <Text style={styles.receiptValue}>
-//                           {formatDateTime(receiptData.timeline.payment)}
-//                         </Text>
-//                       </View>
-//                     )}
-//                     {receiptData.timeline.release && (
-//                       <View style={styles.receiptRow}>
-//                         <Text style={styles.receiptLabel}>Release</Text>
-//                         <Text style={styles.receiptValue}>
-//                           {formatDateTime(receiptData.timeline.release)}
-//                         </Text>
-//                       </View>
-//                     )}
-//                     {receiptData.timeline.completed && (
-//                       <View style={styles.receiptRow}>
-//                         <Text style={styles.receiptLabel}>Completed</Text>
-//                         <Text style={styles.receiptValue}>
-//                           {formatDateTime(receiptData.timeline.completed)}
-//                         </Text>
-//                       </View>
-//                     )}
-//                   </View>
-//                 )}
-//               </>
-//             )}
-
-//             <View style={styles.divider} />
-
-//             {/* QR Code Section - FIXED */}
-//             <View style={styles.qrSection}>
-//               <Text style={styles.qrTitle}>Scan QR Code</Text>
-//               {qrCodeImage ? (
-//                 <View style={styles.qrContainer}>
-//                   <Image
-//                     source={{ 
-//                       uri: qrCodeImage,
-//                       cache: 'reload'
-//                     }}
-//                     style={styles.qrImage}
-//                     resizeMode="contain"
-//                     onError={(error) => {
-//                       console.error('QR Image loading error:', error.nativeEvent);
-//                       // Try to fix by adding data URL prefix
-//                       if (qrCodeImage && !qrCodeImage.startsWith('data:image')) {
-//                         setQrCodeImage(`data:image/png;base64,${qrCodeImage}`);
-//                       }
-//                     }}
-//                   />
-//                   <Text style={styles.qrHint}>
-//                     {receipt.type === 'SALES' ? 'Scan for payment' :
-//                      receipt.type === 'PAYMENT' ? 'Scan for warehouse' :
-//                      'Scan for invoice'}
-//                   </Text>
-//                   {receipt.qrPayload?.step && (
-//                     <Text style={styles.qrStep}>Step: {receipt.qrPayload.step}</Text>
-//                   )}
-//                 </View>
-//               ) : (
-//                 <View style={styles.qrPlaceholder}>
-//                   <QrCode size={64} color={Colors.gray400} />
-//                   <Text style={styles.qrPlaceholderText}>QR code not available</Text>
-//                   <TouchableOpacity 
-//                     style={styles.regenerateButton}
-//                     onPress={async () => {
-//                       try {
-//                         setLoading(true);
-//                         const result = await ReceiptService.generateReceipt(
-//                           receipt.transactionId._id,
-//                           receipt.type
-//                         );
-//                         await fetchReceiptPreview();
-//                         Alert.alert('Success', 'QR code regenerated');
-//                       } catch (error) {
-//                         Alert.alert('Error', 'Failed to regenerate QR code');
-//                       } finally {
-//                         setLoading(false);
-//                       }
-//                     }}
-//                   >
-//                     <Text style={styles.regenerateButtonText}>Regenerate QR</Text>
-//                   </TouchableOpacity>
-//                 </View>
-//               )}
-//             </View>
-
-//             <View style={styles.divider} />
-
-//             {/* Footer */}
-//             <View style={styles.footerSection}>
-//               <Text style={styles.footerText}>
-//                 {receiptData?.store?.receiptFooter || 'Thank you for your business!'}
-//               </Text>
-//               <Text style={styles.footerSubtext}>
-//                 Printed: {receipt.printed ? 'Yes' : 'No'}
-//                 {receipt.printCount > 0 && ` (${receipt.printCount}x)`}
-//               </Text>
-//             </View>
-//           </View>
-//         )}
-//       </ScrollView>
-
-//       {/* Action Buttons */}
-//       <View style={styles.actionsContainer}>
-//         <TouchableOpacity
-//           style={[styles.actionButton, styles.shareActionButton]}
-//           onPress={handleShare}
-//         >
-//           <Share2 size={20} color={Colors.white} />
-//           <Text style={styles.actionButtonText}>Share</Text>
-//         </TouchableOpacity>
-//         <TouchableOpacity
-//           style={[styles.actionButton, styles.downloadActionButton]}
-//           onPress={handleDownload}
-//         >
-//           <Download size={20} color={Colors.white} />
-//           <Text style={styles.actionButtonText}>Download</Text>
-//         </TouchableOpacity>
-//         <TouchableOpacity
-//           style={[styles.actionButton, styles.printActionButton]}
-//           onPress={handlePrint}
-//         >
-//           <Printer size={20} color={Colors.white} />
-//           <Text style={styles.actionButtonText}>Print</Text>
-//         </TouchableOpacity>
-//       </View>
-//     </View>
-//   );
-// }
-
-// const styles = StyleSheet.create({
-//   container: { flex: 1, backgroundColor: Colors.gray50 },
-//   loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: Colors.white },
-//   loadingText: { marginTop: Spacing.md, color: Colors.gray500, fontSize: Typography.md },
-//   errorContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: Colors.white },
-//   errorText: { fontSize: Typography.lg, color: Colors.gray700 },
-//   closeButton: { marginTop: Spacing.md, padding: Spacing.md, backgroundColor: Colors.primary, borderRadius: BorderRadius.lg },
-//   closeButtonText: { color: Colors.white, fontWeight: '600' },
-//   header: {
-//     flexDirection: 'row',
-//     justifyContent: 'space-between',
-//     alignItems: 'center',
-//     paddingHorizontal: Spacing.md,
-//     paddingVertical: Spacing.md,
-//     backgroundColor: Colors.white,
-//     borderBottomWidth: 1,
-//     borderBottomColor: Colors.gray200,
-//   },
-//   headerButton: { padding: Spacing.sm },
-//   headerTitle: { fontSize: Typography.lg, fontWeight: '600', color: Colors.gray900 },
-//   scrollView: { flex: 1 },
-//   scrollContent: { padding: Spacing.md, paddingBottom: Spacing['4xl'] },
-//   receiptCard: {
-//     backgroundColor: Colors.white,
-//     borderRadius: BorderRadius.lg,
-//     padding: Spacing['2xl'],
-//     ...Shadows.md,
-//   },
-//   receiptText: {
-//     fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
-//     fontSize: Typography.sm,
-//     lineHeight: 20,
-//     color: Colors.gray900,
-//   },
-//   receiptHeader: { alignItems: 'center', marginBottom: Spacing.md },
-//   receiptTitle: { fontSize: Typography.xl, fontWeight: 'bold', color: Colors.gray900 },
-//   receiptSubtitle: { fontSize: Typography.md, color: Colors.gray500, marginTop: 2 },
-//   receiptNumber: { fontSize: Typography.sm, color: Colors.gray400, marginTop: 2 },
-//   divider: { borderTopWidth: 1, borderTopColor: Colors.gray200, marginVertical: Spacing.md },
-//   receiptSection: { marginBottom: Spacing.sm },
-//   sectionTitle: { fontSize: Typography.md, fontWeight: '600', color: Colors.gray900, marginBottom: Spacing.xs },
-//   storeName: { fontSize: Typography.sm, fontWeight: '500', color: Colors.gray900 },
-//   storeDetail: { fontSize: Typography.xs, color: Colors.gray500, marginTop: 1 },
-//   receiptRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 2 },
-//   receiptLabel: { fontSize: Typography.sm, color: Colors.gray500 },
-//   receiptValue: { fontSize: Typography.sm, fontWeight: '500', color: Colors.gray900 },
-//   statusValue: { color: Colors.primary },
-//   itemRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 4, borderBottomWidth: 1, borderBottomColor: Colors.gray50 },
-//   itemInfo: { flex: 1, marginRight: Spacing.sm },
-//   itemName: { fontSize: Typography.sm, fontWeight: '500', color: Colors.gray900 },
-//   itemDetail: { fontSize: Typography.xs, color: Colors.gray500 },
-//   itemSku: { fontSize: Typography.xs, color: Colors.gray400, marginTop: 1 },
-//   itemTotal: { fontSize: Typography.sm, fontWeight: '600', color: Colors.gray900 },
-//   summaryRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 2 },
-//   summaryLabel: { fontSize: Typography.sm, color: Colors.gray600 },
-//   summaryValue: { fontSize: Typography.sm, fontWeight: '500', color: Colors.gray900 },
-//   discountValue: { color: Colors.success },
-//   totalRow: { borderTopWidth: 1, borderTopColor: Colors.gray200, paddingTop: Spacing.sm, marginTop: Spacing.xs },
-//   totalLabel: { fontSize: Typography.md, fontWeight: 'bold', color: Colors.gray900 },
-//   totalValue: { fontSize: Typography.md, fontWeight: 'bold', color: Colors.primary },
-//   staffRow: { flexDirection: 'row', paddingVertical: 2 },
-//   staffRole: { fontSize: Typography.sm, color: Colors.gray600, width: 80 },
-//   staffName: { fontSize: Typography.sm, fontWeight: '500', color: Colors.gray900, flex: 1 },
-//   qrSection: { alignItems: 'center', marginVertical: Spacing.sm },
-//   qrTitle: { fontSize: Typography.sm, fontWeight: '500', color: Colors.gray600, marginBottom: Spacing.sm },
-//   qrContainer: { alignItems: 'center' },
-//   qrImage: { 
-//     width: width * 0.4, 
-//     height: width * 0.4, 
-//     backgroundColor: Colors.white, 
-//     borderRadius: BorderRadius.lg,
-//     borderWidth: 1,
-//     borderColor: Colors.gray200,
-//   },
-//   qrHint: { fontSize: Typography.xs, color: Colors.gray500, marginTop: Spacing.sm },
-//   qrStep: { fontSize: Typography.xs, color: Colors.primary, marginTop: 2 },
-//   qrPlaceholder: {
-//     width: width * 0.4,
-//     height: width * 0.4,
-//     backgroundColor: Colors.gray100,
-//     borderRadius: BorderRadius.lg,
-//     alignItems: 'center',
-//     justifyContent: 'center',
-//   },
-//   qrPlaceholderText: { marginTop: Spacing.sm, color: Colors.gray500, fontSize: Typography.sm },
-//   regenerateButton: {
-//     marginTop: Spacing.md,
-//     backgroundColor: Colors.primary,
-//     paddingHorizontal: Spacing.md,
-//     paddingVertical: Spacing.sm,
-//     borderRadius: BorderRadius.lg,
-//   },
-//   regenerateButtonText: { color: Colors.white, fontWeight: '600', fontSize: Typography.sm },
-//   footerSection: { alignItems: 'center' },
-//   footerText: { fontSize: Typography.md, color: Colors.gray600, textAlign: 'center' },
-//   footerSubtext: { fontSize: Typography.xs, color: Colors.gray400, marginTop: Spacing.xs },
-//   actionsContainer: {
-//     flexDirection: 'row',
-//     padding: Spacing.md,
-//     backgroundColor: Colors.white,
-//     borderTopWidth: 1,
-//     borderTopColor: Colors.gray200,
-//     gap: Spacing.sm,
-//   },
-//   actionButton: {
-//     flex: 1,
-//     flexDirection: 'row',
-//     alignItems: 'center',
-//     justifyContent: 'center',
-//     paddingVertical: Spacing.md,
-//     borderRadius: BorderRadius.lg,
-//     gap: 4,
-//   },
-//   shareActionButton: { backgroundColor: Colors.primary },
-//   downloadActionButton: { backgroundColor: Colors.success },
-//   printActionButton: { backgroundColor: Colors.warning },
-//   actionButtonText: { color: Colors.white, fontWeight: '600', fontSize: Typography.sm },
-// });
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 import React, { useState, useEffect } from 'react';
 import {
   View,
@@ -1596,14 +10,22 @@ import {
   Alert,
   Share,
   Dimensions,
+  Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { X, Download, Share2, Printer, QrCode, CheckCircle, ArrowLeft } from 'lucide-react-native';
 import TransactionService from '../../../services/transactionService';
+import ReceiptService from '../../../services/receiptService';
+import PrinterService from '../../../services/printer';
 import { Colors, Spacing, Typography, BorderRadius, Shadows } from '../../../constants/theme';
 import { formatCurrency, formatDateTime } from '../../../utils/formatters';
 import CustomHeader from '../../../components/ui/CustomHeader';
+import BluetoothPrinterModal from '../../../components/print/BluetoothPrinterModal';
+import * as FileSystem from 'expo-file-system';
+import * as Sharing from 'expo-sharing';
+import ViewShot from 'react-native-view-shot';
+import { captureRef } from 'react-native-view-shot';
 
 const { width } = Dimensions.get('window');
 
@@ -1622,6 +44,12 @@ export default function ReceiptPreview() {
   const [transaction, setTransaction] = useState(null);
   const [qrCode, setQrCode] = useState(qrData || null);
   const [receiptData, setReceiptData] = useState(null);
+  const [receipt, setReceipt] = useState(null);
+  const [viewShotRef, setViewShotRef] = useState(null);
+  const [printerModalVisible, setPrinterModalVisible] = useState(false);
+  const [printReceiptData, setPrintReceiptData] = useState(null);
+  const [isPrinterConnected, setIsPrinterConnected] = useState(false);
+  const [printerDevice, setPrinterDevice] = useState(null);
 
   useEffect(() => {
     if (transactionId) {
@@ -1632,24 +60,42 @@ export default function ReceiptPreview() {
   const fetchReceipt = async () => {
     try {
       setLoading(true);
+      
+      // Get transaction with full details
       const result = await TransactionService.getTransaction(transactionId);
       setTransaction(result);
-      setReceiptData(result.receiptData || null);
       
-      // If QR data wasn't passed, try to get it from transaction
-      if (!qrCode) {
-        if (qrType === 'SALES' && result.salesQR) {
-          setQrCode(result.salesQR);
-        } else if (qrType === 'PAYMENT' && result.paymentQR) {
-          setQrCode(result.paymentQR);
-        } else if (qrType === 'RELEASE' && result.releaseQR) {
-          setQrCode(result.releaseQR);
-        } else if (qrType === 'INVOICE' && result.invoiceQR) {
-          setQrCode(result.invoiceQR);
-        } else if (result.salesQR) {
-          setQrCode(result.salesQR);
-        }
+      // Get receipt data from transaction
+      if (result.receiptData) {
+        setReceiptData(result.receiptData);
       }
+      
+      // Determine QR code
+      if (qrData) {
+        setQrCode(qrData);
+      } else if (qrType === 'SALES' && result.salesQR) {
+        setQrCode(result.salesQR);
+      } else if (qrType === 'PAYMENT' && result.paymentQR) {
+        setQrCode(result.paymentQR);
+      } else if (qrType === 'RELEASE' && result.releaseQR) {
+        setQrCode(result.releaseQR);
+      } else if (qrType === 'INVOICE' && result.invoiceQR) {
+        setQrCode(result.invoiceQR);
+      } else if (result.salesQR) {
+        setQrCode(result.salesQR);
+      }
+      
+      // Try to get receipt record
+      try {
+        const receiptRecord = await ReceiptService.getReceiptsByTransaction(transactionId);
+        if (receiptRecord && receiptRecord.length > 0) {
+          const found = receiptRecord.find(r => r.type === qrType) || receiptRecord[0];
+          setReceipt(found);
+        }
+      } catch (e) {
+        console.log('No receipt record found');
+      }
+      
     } catch (error) {
       console.error('Error fetching receipt:', error);
       Alert.alert('Error', 'Failed to load receipt');
@@ -1661,7 +107,7 @@ export default function ReceiptPreview() {
   const handleShare = async () => {
     try {
       await Share.share({
-        message: `Transaction ${transaction?.transactionNumber || transactionNumber}\nTotal: ${formatCurrency(transaction?.totalAmount || 0)}\nDate: ${formatDateTime(transaction?.createdAt)}`,
+        message: getShareMessage(),
         title: 'Receipt',
       });
     } catch (error) {
@@ -1669,13 +115,202 @@ export default function ReceiptPreview() {
     }
   };
 
-  const handlePrint = () => {
-    Alert.alert('Print', 'Print functionality coming soon');
+  const getShareMessage = () => {
+    const t = transaction || {};
+    const data = receiptData || {};
+    const store = data.store || {};
+    const summary = data.summary || {};
+    
+    return `
+${store.name || 'Store'}
+${store.address || ''}
+${store.phone ? `Tel: ${store.phone}` : ''}
+${store.email ? `Email: ${store.email}` : ''}
+${'─'.repeat(40)}
+${qrType || 'SALES'} RECEIPT
+${'─'.repeat(40)}
+Transaction: ${t.transactionNumber || transactionNumber || 'N/A'}
+${t.finalInvoiceNumber ? `Invoice: ${t.finalInvoiceNumber}` : ''}
+Date: ${formatDateTime(t.createdAt)}
+Status: ${t.status || 'N/A'}
+${'─'.repeat(40)}
+ITEMS
+${'─'.repeat(40)}
+${formatItemsForShare(data.items || [])}
+${'─'.repeat(40)}
+Subtotal: ${formatCurrency(summary.subtotal || t.subtotal || 0)}
+Tax: ${formatCurrency(summary.taxTotal || t.taxTotal || 0)}
+TOTAL: ${formatCurrency(summary.totalAmount || t.totalAmount || 0)}
+${'─'.repeat(40)}
+${summary.paymentMethod ? `Payment: ${summary.paymentMethod}` : ''}
+${summary.amountPaid ? `Amount Paid: ${formatCurrency(summary.amountPaid)}` : ''}
+${summary.changeAmount ? `Change: ${formatCurrency(summary.changeAmount)}` : ''}
+${'─'.repeat(40)}
+Thank you for your business!
+    `.trim();
   };
 
-  const handleDownload = () => {
-    Alert.alert('Download', 'Download functionality coming soon');
+  const formatItemsForShare = (items) => {
+    if (!items || items.length === 0) return 'No items';
+    return items.map(item => {
+      const name = item.name || 'Item';
+      const qty = item.quantity || 0;
+      const price = item.unitPrice || 0;
+      const total = item.totalPrice || (qty * price);
+      return `${name.substring(0, 25)}  ${qty} × ${formatCurrency(price)} = ${formatCurrency(total)}`;
+    }).join('\n');
   };
+
+  const handleDownloadPDF = async () => {
+    try {
+      setLoading(true);
+      
+      // Generate receipt PDF via API
+      const response = await ReceiptService.generateReceipt(transactionId, qrType);
+      
+      if (response && response.downloadUrl) {
+        // Download the PDF
+        const fileUri = FileSystem.documentDirectory + `receipt_${transactionNumber || Date.now()}.pdf`;
+        const downloadResult = await FileSystem.downloadAsync(
+          response.downloadUrl,
+          fileUri
+        );
+        
+        if (downloadResult.status === 200) {
+          if (await Sharing.isAvailableAsync()) {
+            await Sharing.shareAsync(fileUri);
+          } else {
+            Alert.alert('Download Complete', `Receipt saved to ${fileUri}`);
+          }
+        }
+      } else {
+        // Fallback: Generate PDF from receipt data
+        await generateAndDownloadPDF();
+      }
+    } catch (error) {
+      console.error('Download error:', error);
+      Alert.alert('Error', 'Failed to download receipt. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const generateAndDownloadPDF = async () => {
+    try {
+      // Use view-shot to capture the receipt view
+      if (viewShotRef) {
+        const uri = await captureRef(viewShotRef, {
+          format: 'png',
+          quality: 0.8,
+        });
+        
+        // Share the image as PDF alternative
+        if (await Sharing.isAvailableAsync()) {
+          await Sharing.shareAsync(uri);
+        }
+      } else {
+        Alert.alert('Info', 'Please try again with the share button');
+      }
+    } catch (error) {
+      console.error('Capture error:', error);
+      Alert.alert('Error', 'Failed to generate download');
+    }
+  };
+
+
+  const t = transaction;
+  const data = receiptData || {};
+  const store = data.store || {};
+  const summary = data.summary || {};
+  const items = data.items || t?.items || [];
+  const staff = data.staff || {};
+  const timeline = data.timeline || {};
+  const qrCodes = data.qrCodes || {};
+  const releasedItems = data.releasedItems || t?.itemsReleased || [];
+
+useEffect(() => {
+  checkPrinterStatus();
+
+  // addConnectionListener returns an unsubscribe function - PrinterService
+  // has no removeConnectionListener(), so capture and call this instead or
+  // the listener leaks (and unmount previously threw).
+  const unsubscribe = PrinterService.addConnectionListener(({ connected, device }) => {
+    setIsPrinterConnected(connected);
+    setPrinterDevice(device);
+  });
+
+  return () => {
+    if (typeof unsubscribe === 'function') unsubscribe();
+  };
+}, []);
+
+// Check printer status
+const checkPrinterStatus = () => {
+  const status = PrinterService.getConnectionStatus();
+  setIsPrinterConnected(status.connected);
+  if (status.connected) {
+    setPrinterDevice(status.device);
+  }
+};
+
+// Update handlePrint function
+const handlePrint = () => {
+  // Prepare receipt data
+  const printData = {
+    store: {
+      name: store.name || transaction?.storeId?.name || 'Store',
+      address: store.address || '',
+      phone: store.phone || '',
+      email: store.email || '',
+    },
+    transaction: {
+      number: transaction?.transactionNumber || transactionNumber || 'N/A',
+      createdAt: transaction?.createdAt || new Date(),
+      status: transaction?.status || 'N/A',
+    },
+    items: items.map(item => ({
+      name: item.name || item.productId?.name || 'Item',
+      sku: item.sku || item.productId?.sku || '',
+      quantity: item.quantity || 0,
+      unitPrice: item.unitPrice || 0,
+      totalPrice: item.totalPrice || (item.quantity || 0) * (item.unitPrice || 0),
+      taxAmount: item.taxAmount || 0,
+    })),
+    summary: {
+      subtotal: summary.subtotal || transaction?.subtotal || 0,
+      taxTotal: summary.taxTotal || transaction?.taxTotal || 0,
+      discountTotal: summary.discountTotal || 0,
+      totalAmount: summary.totalAmount || transaction?.totalAmount || 0,
+      amountPaid: summary.amountPaid || transaction?.amountPaid || 0,
+      changeAmount: summary.changeAmount || transaction?.changeAmount || 0,
+      paymentMethod: summary.paymentMethod || transaction?.paymentMethod || '',
+    },
+    staff: {
+      salesAttendant: staff.salesAttendant || (transaction?.salesAttendantId ? {
+        name: `${transaction.salesAttendantId.firstName || ''} ${transaction.salesAttendantId.lastName || ''}`.trim() || 'N/A',
+      } : null),
+      financeAttendant: staff.financeAttendant || (transaction?.financeAttendantId ? {
+        name: `${transaction.financeAttendantId.firstName || ''} ${transaction.financeAttendantId.lastName || ''}`.trim() || 'N/A',
+      } : null),
+      warehouseStaff: staff.warehouseStaff || (transaction?.warehouseStaffId ? {
+        name: `${transaction.warehouseStaffId.firstName || ''} ${transaction.warehouseStaffId.lastName || ''}`.trim() || 'N/A',
+      } : null),
+    },
+    payment: {
+      method: transaction?.paymentMethod || '',
+      reference: transaction?.paymentReference || '',
+    },
+    invoice: {
+      number: transaction?.finalInvoiceNumber || '',
+    },
+    qrCode: qrCode,
+  };
+  
+  setPrintReceiptData(printData);
+  setPrinterModalVisible(true);
+};
+
+
 
   const getQRTypeLabel = () => {
     const labels = {
@@ -1683,6 +318,7 @@ export default function ReceiptPreview() {
       'PAYMENT': 'Payment QR - Scan for Warehouse Release',
       'RELEASE': 'Release QR - Scan for Invoice',
       'INVOICE': 'Invoice QR - Scan to Complete',
+      'FINAL': 'Final Receipt'
     };
     return labels[qrType] || 'QR Code';
   };
@@ -1693,8 +329,20 @@ export default function ReceiptPreview() {
       'PAYMENT': Colors.success,
       'RELEASE': Colors.warning,
       'INVOICE': Colors.primary,
+      'FINAL': Colors.success,
     };
     return colors[qrType] || Colors.primary;
+  };
+
+  const getReceiptTitle = () => {
+    const titles = {
+      'SALES': 'Sales Receipt',
+      'PAYMENT': 'Payment Receipt',
+      'RELEASE': 'Release Receipt',
+      'INVOICE': 'Final Invoice',
+      'FINAL': 'Final Receipt'
+    };
+    return titles[qrType] || 'Receipt';
   };
 
   if (loading) {
@@ -1717,19 +365,15 @@ export default function ReceiptPreview() {
     );
   }
 
+  
+
   return (
     <SafeAreaView style={styles.container}>
-      <CustomHeader title="Receipt Preview" />
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()} style={styles.headerButton}>
-          <X size={24} color={Colors.gray700} />
+          <ArrowLeft size={24} color={Colors.gray700} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>
-          {qrType === 'INVOICE' ? 'Invoice' : 
-           qrType === 'PAYMENT' ? 'Payment Receipt' :
-           qrType === 'RELEASE' ? 'Release Receipt' : 
-           'Sales Receipt'}
-        </Text>
+        <Text style={styles.headerTitle}>{getReceiptTitle()}</Text>
         <View style={{ width: 40 }} />
       </View>
 
@@ -1737,19 +381,211 @@ export default function ReceiptPreview() {
         style={styles.scrollView}
         contentContainerStyle={styles.scrollContent}
       >
-        <View style={styles.receiptCard}>
+        <ViewShot 
+          ref={setViewShotRef}
+          style={styles.receiptCard}
+          options={{ format: 'png', quality: 0.9 }}
+        >
           {/* Header */}
           <View style={styles.receiptHeader}>
-            <Text style={styles.receiptTitle}>
-              {qrType === 'INVOICE' ? 'Final Invoice' : 
-               qrType === 'PAYMENT' ? 'Payment Receipt' :
-               qrType === 'RELEASE' ? 'Release Receipt' : 
-               'Sales Receipt'}
-            </Text>
-            <Text style={styles.receiptSubtitle}>{transaction.storeId?.name || 'Store'}</Text>
+            <Text style={styles.receiptTitle}>{getReceiptTitle()}</Text>
+            <Text style={styles.receiptSubtitle}>{store.name || 'Store'}</Text>
+            {store.address && (
+              <Text style={styles.receiptDetail}>{store.address}</Text>
+            )}
+            {store.phone && (
+              <Text style={styles.receiptDetail}>📞 {store.phone}</Text>
+            )}
+            {store.email && (
+              <Text style={styles.receiptDetail}>✉️ {store.email}</Text>
+            )}
           </View>
 
-          {/* QR Code Section */}
+          <View style={styles.divider} />
+
+          {/* Transaction Info */}
+          <View style={styles.receiptSection}>
+            <View style={styles.receiptRow}>
+              <Text style={styles.receiptLabel}>Transaction</Text>
+              <Text style={styles.receiptValue}>{t.transactionNumber || transactionNumber}</Text>
+            </View>
+            {t.finalInvoiceNumber && (
+              <View style={styles.receiptRow}>
+                <Text style={styles.receiptLabel}>Invoice #</Text>
+                <Text style={[styles.receiptValue, styles.invoiceText]}>{t.finalInvoiceNumber}</Text>
+              </View>
+            )}
+            <View style={styles.receiptRow}>
+              <Text style={styles.receiptLabel}>Date</Text>
+              <Text style={styles.receiptValue}>{formatDateTime(t.createdAt)}</Text>
+            </View>
+            <View style={styles.receiptRow}>
+              <Text style={styles.receiptLabel}>Status</Text>
+              <Text style={[styles.receiptValue, styles.statusText]}>
+                {t.status || 'N/A'}
+              </Text>
+            </View>
+            {t.paymentMethod && (
+              <View style={styles.receiptRow}>
+                <Text style={styles.receiptLabel}>Payment Method</Text>
+                <Text style={styles.receiptValue}>{t.paymentMethod}</Text>
+              </View>
+            )}
+          </View>
+
+          <View style={styles.divider} />
+
+          {/* Items */}
+          {items && items.length > 0 && (
+            <View style={styles.receiptSection}>
+              <Text style={styles.sectionTitle}>Items ({items.length})</Text>
+              {items.map((item, index) => {
+                const product = item.productId || item;
+                const itemName = item.name || product?.name || 'Item';
+                const qty = item.quantity || 0;
+                const unitPrice = item.unitPrice || 0;
+                const total = item.totalPrice || (qty * unitPrice);
+                const isReleased = item.isReleased || false;
+                
+                return (
+                  <View key={index} style={styles.itemRow}>
+                    <View style={styles.itemInfo}>
+                      <Text style={styles.itemName} numberOfLines={2}>
+                        {itemName}
+                      </Text>
+                      <Text style={styles.itemDetail}>
+                        Qty: {qty} × {formatCurrency(unitPrice)}
+                      </Text>
+                      {item.sku && (
+                        <Text style={styles.itemSku}>SKU: {item.sku}</Text>
+                      )}
+                      {isReleased && (
+                        <Text style={styles.itemReleased}>✓ Released</Text>
+                      )}
+                    </View>
+                    <Text style={styles.itemTotal}>{formatCurrency(total)}</Text>
+                  </View>
+                );
+              })}
+            </View>
+          )}
+
+          {/* Released Items */}
+          {releasedItems && releasedItems.length > 0 && (
+            <View style={styles.receiptSection}>
+              <Text style={styles.sectionTitle}>Released Items ({releasedItems.length})</Text>
+              {releasedItems.map((item, index) => (
+                <View key={index} style={styles.itemRow}>
+                  <View style={styles.itemInfo}>
+                    <Text style={styles.itemName}>
+                      {item.productName || 'Item'}
+                    </Text>
+                    <Text style={styles.itemDetail}>
+                      Qty: {item.quantityReleased || 0} × {formatCurrency(item.unitPrice || 0)}
+                    </Text>
+                    {item.releasedByName && (
+                      <Text style={styles.itemReleasedBy}>
+                        Released by: {item.releasedByName}
+                      </Text>
+                    )}
+                  </View>
+                  <Text style={styles.itemTotal}>
+                    {formatCurrency(item.totalPrice || 0)}
+                  </Text>
+                </View>
+              ))}
+            </View>
+          )}
+
+          <View style={styles.divider} />
+
+          {/* Staff */}
+          {(staff.salesAttendant || staff.financeAttendant || staff.warehouseStaff) && (
+            <View style={styles.receiptSection}>
+              <Text style={styles.sectionTitle}>Staff</Text>
+              {staff.salesAttendant && (
+                <View style={styles.staffRow}>
+                  <Text style={styles.staffRole}>Sales:</Text>
+                  <Text style={styles.staffName}>{staff.salesAttendant.name}</Text>
+                  {staff.salesAttendant.email && (
+                    <Text style={styles.staffEmail}>{staff.salesAttendant.email}</Text>
+                  )}
+                </View>
+              )}
+              {staff.financeAttendant && (
+                <View style={styles.staffRow}>
+                  <Text style={styles.staffRole}>Finance:</Text>
+                  <Text style={styles.staffName}>{staff.financeAttendant.name}</Text>
+                  {staff.financeAttendant.email && (
+                    <Text style={styles.staffEmail}>{staff.financeAttendant.email}</Text>
+                  )}
+                </View>
+              )}
+              {staff.warehouseStaff && (
+                <View style={styles.staffRow}>
+                  <Text style={styles.staffRole}>Warehouse:</Text>
+                  <Text style={styles.staffName}>{staff.warehouseStaff.name}</Text>
+                  {staff.warehouseStaff.email && (
+                    <Text style={styles.staffEmail}>{staff.warehouseStaff.email}</Text>
+                  )}
+                </View>
+              )}
+            </View>
+          )}
+
+          <View style={styles.divider} />
+
+          {/* Totals */}
+          <View style={styles.receiptSection}>
+            <View style={styles.totalRow}>
+              <Text style={styles.totalLabel}>Subtotal</Text>
+              <Text style={styles.totalValue}>
+                {formatCurrency(summary.subtotal || t.subtotal || 0)}
+              </Text>
+            </View>
+            <View style={styles.totalRow}>
+              <Text style={styles.totalLabel}>Tax</Text>
+              <Text style={styles.totalValue}>
+                {formatCurrency(summary.taxTotal || t.taxTotal || 0)}
+              </Text>
+            </View>
+            {summary.discountTotal > 0 && (
+              <View style={styles.totalRow}>
+                <Text style={styles.totalLabel}>Discount</Text>
+                <Text style={[styles.totalValue, styles.discountValue]}>
+                  -{formatCurrency(summary.discountTotal)}
+                </Text>
+              </View>
+            )}
+            <View style={[styles.totalRow, styles.grandTotalRow]}>
+              <Text style={styles.grandTotalLabel}>Total</Text>
+              <Text style={styles.grandTotalValue}>
+                {formatCurrency(summary.totalAmount || t.totalAmount || 0)}
+              </Text>
+            </View>
+            {summary.amountPaid > 0 && (
+              <>
+                <View style={styles.totalRow}>
+                  <Text style={styles.totalLabel}>Amount Paid</Text>
+                  <Text style={styles.totalValue}>
+                    {formatCurrency(summary.amountPaid || t.amountPaid || 0)}
+                  </Text>
+                </View>
+                {summary.changeAmount > 0 && (
+                  <View style={styles.totalRow}>
+                    <Text style={styles.totalLabel}>Change</Text>
+                    <Text style={[styles.totalValue, styles.changeText]}>
+                      {formatCurrency(summary.changeAmount || t.changeAmount || 0)}
+                    </Text>
+                  </View>
+                )}
+              </>
+            )}
+          </View>
+
+          <View style={styles.divider} />
+
+          {/* QR Code */}
           <View style={[styles.qrSection, { borderColor: getQRTypeColor() }]}>
             <Text style={[styles.qrTitle, { color: getQRTypeColor() }]}>
               {getQRTypeLabel()}
@@ -1766,10 +602,10 @@ export default function ReceiptPreview() {
                   }}
                 />
                 <Text style={styles.qrHint}>
-                  {qrType === 'SALES' && 'Scan this QR to process payment'}
-                  {qrType === 'PAYMENT' && 'Scan this QR to release items from warehouse'}
-                  {qrType === 'RELEASE' && 'Scan this QR to view invoice'}
-                  {qrType === 'INVOICE' && 'Scan this QR to complete transaction'}
+                  {qrType === 'SALES' && 'Scan to process payment'}
+                  {qrType === 'PAYMENT' && 'Scan to release items from warehouse'}
+                  {qrType === 'RELEASE' && 'Scan to view invoice'}
+                  {qrType === 'INVOICE' && 'Scan to complete transaction'}
                 </Text>
               </View>
             ) : (
@@ -1780,180 +616,27 @@ export default function ReceiptPreview() {
             )}
           </View>
 
-          {/* Transaction Details */}
-          <View style={styles.receiptSection}>
-            <View style={styles.receiptRow}>
-              <Text style={styles.receiptLabel}>Transaction</Text>
-              <Text style={styles.receiptValue}>
-                {transaction.transactionNumber || transactionNumber}
-              </Text>
-            </View>
-            <View style={styles.receiptRow}>
-              <Text style={styles.receiptLabel}>Date</Text>
-              <Text style={styles.receiptValue}>
-                {formatDateTime(transaction.createdAt)}
-              </Text>
-            </View>
-            <View style={styles.receiptRow}>
-              <Text style={styles.receiptLabel}>Status</Text>
-              <Text style={[styles.receiptValue, styles.statusText]}>
-                {transaction.status}
-              </Text>
-            </View>
-            {invoiceNumber && (
-              <View style={styles.receiptRow}>
-                <Text style={styles.receiptLabel}>Invoice #</Text>
-                <Text style={[styles.receiptValue, styles.invoiceText]}>
-                  {invoiceNumber}
-                </Text>
-              </View>
-            )}
-          </View>
-
-          {/* Items */}
-          {transaction.items && transaction.items.length > 0 && (
-            <View style={styles.receiptSection}>
-              <Text style={styles.sectionTitle}>Items</Text>
-              {transaction.items.map((item, index) => {
-                const product = item.productId || item;
-                return (
-                  <View key={index} style={styles.itemRow}>
-                    <View style={styles.itemInfo}>
-                      <Text style={styles.itemName}>{product.name}</Text>
-                      <Text style={styles.itemDetail}>
-                        {item.quantity} × {formatCurrency(item.unitPrice)}
-                      </Text>
-                      {item.isReleased && (
-                        <Text style={styles.itemReleased}>✓ Released</Text>
-                      )}
-                    </View>
-                    <Text style={styles.itemTotal}>
-                      {formatCurrency(item.totalPrice)}
-                    </Text>
-                  </View>
-                );
-              })}
-            </View>
-          )}
-
-          {/* Released Items */}
-          {transaction.itemsReleased && transaction.itemsReleased.length > 0 && (
-            <View style={styles.receiptSection}>
-              <Text style={styles.sectionTitle}>Released Items</Text>
-              {transaction.itemsReleased.map((item, index) => (
-                <View key={index} style={styles.itemRow}>
-                  <View style={styles.itemInfo}>
-                    <Text style={styles.itemName}>{item.productName || 'Product'}</Text>
-                    <Text style={styles.itemDetail}>
-                      {item.quantityReleased} × {formatCurrency(item.unitPrice)}
-                    </Text>
-                  </View>
-                  <Text style={styles.itemTotal}>
-                    {formatCurrency(item.totalPrice)}
-                  </Text>
-                </View>
-              ))}
-            </View>
-          )}
-
-          {/* Payment Details */}
-          {transaction.paymentMethod && (
-            <View style={styles.receiptSection}>
-              <Text style={styles.sectionTitle}>Payment</Text>
-              <View style={styles.receiptRow}>
-                <Text style={styles.receiptLabel}>Method</Text>
-                <Text style={styles.receiptValue}>{transaction.paymentMethod}</Text>
-              </View>
-              <View style={styles.receiptRow}>
-                <Text style={styles.receiptLabel}>Amount Paid</Text>
-                <Text style={styles.receiptValue}>{formatCurrency(transaction.amountPaid)}</Text>
-              </View>
-              {transaction.changeAmount > 0 && (
-                <View style={styles.receiptRow}>
-                  <Text style={styles.receiptLabel}>Change</Text>
-                  <Text style={[styles.receiptValue, styles.changeText]}>
-                    {formatCurrency(transaction.changeAmount)}
-                  </Text>
-                </View>
-              )}
-            </View>
-          )}
-
-          {/* Totals */}
-          <View style={[styles.receiptSection, styles.totalsSection]}>
-            <View style={styles.totalRow}>
-              <Text style={styles.totalLabel}>Subtotal</Text>
-              <Text style={styles.totalValue}>{formatCurrency(transaction.subtotal)}</Text>
-            </View>
-            <View style={styles.totalRow}>
-              <Text style={styles.totalLabel}>Tax</Text>
-              <Text style={styles.totalValue}>{formatCurrency(transaction.taxTotal)}</Text>
-            </View>
-            <View style={[styles.totalRow, styles.grandTotalRow]}>
-              <Text style={styles.grandTotalLabel}>Total</Text>
-              <Text style={styles.grandTotalValue}>{formatCurrency(transaction.totalAmount)}</Text>
-            </View>
-          </View>
-
-          {/* QR Status Tracking */}
-          <View style={styles.receiptSection}>
-            <Text style={styles.sectionTitle}>QR Status</Text>
-            <View style={styles.qrStatusRow}>
-              <View style={[styles.qrStatusItem, transaction.qrStatus?.salesQRScanned && styles.qrStatusComplete]}>
-                <Text style={styles.qrStatusLabel}>Sales QR</Text>
-                {transaction.qrStatus?.salesQRScanned ? (
-                  <CheckCircle size={16} color={Colors.success} />
-                ) : (
-                  <Text style={styles.qrStatusPending}>Pending</Text>
-                )}
-              </View>
-              <View style={[styles.qrStatusItem, transaction.qrStatus?.paymentQRScanned && styles.qrStatusComplete]}>
-                <Text style={styles.qrStatusLabel}>Payment QR</Text>
-                {transaction.qrStatus?.paymentQRScanned ? (
-                  <CheckCircle size={16} color={Colors.success} />
-                ) : (
-                  <Text style={styles.qrStatusPending}>Pending</Text>
-                )}
-              </View>
-              <View style={[styles.qrStatusItem, transaction.qrStatus?.releaseQRScanned && styles.qrStatusComplete]}>
-                <Text style={styles.qrStatusLabel}>Release QR</Text>
-                {transaction.qrStatus?.releaseQRScanned ? (
-                  <CheckCircle size={16} color={Colors.success} />
-                ) : (
-                  <Text style={styles.qrStatusPending}>Pending</Text>
-                )}
-              </View>
-              <View style={[styles.qrStatusItem, transaction.qrStatus?.invoiceQRScanned && styles.qrStatusComplete]}>
-                <Text style={styles.qrStatusLabel}>Invoice QR</Text>
-                {transaction.qrStatus?.invoiceQRScanned ? (
-                  <CheckCircle size={16} color={Colors.success} />
-                ) : (
-                  <Text style={styles.qrStatusPending}>Pending</Text>
-                )}
-              </View>
-            </View>
-          </View>
-
           {/* Footer */}
           <View style={styles.receiptFooter}>
-            <Text style={styles.footerText}>Thank you for your business!</Text>
-            <Text style={styles.footerSubtext}>
-              {qrType === 'INVOICE' ? 'Transaction Complete' : 
-               qrType === 'PAYMENT' ? 'Payment Confirmed' :
-               qrType === 'RELEASE' ? 'Items Released' : 
-               'Ready for Payment'}
+            <Text style={styles.footerText}>
+              {store.receiptFooter || 'Thank you for your business!'}
             </Text>
+            {receipt && receipt.printed && (
+              <Text style={styles.footerSubtext}>
+                Printed: {formatDateTime(receipt.printedAt)} (×{receipt.printCount || 1})
+              </Text>
+            )}
           </View>
-        </View>
+        </ViewShot>
       </ScrollView>
 
       {/* Action Buttons */}
-      <View style={styles.actionsContainer}>
+      {/* <View style={styles.actionsContainer}>
         <TouchableOpacity style={[styles.actionButton, styles.shareButton]} onPress={handleShare}>
           <Share2 size={20} color={Colors.white} />
           <Text style={styles.actionButtonText}>Share</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={[styles.actionButton, styles.downloadButton]} onPress={handleDownload}>
+        <TouchableOpacity style={[styles.actionButton, styles.downloadButton]} onPress={handleDownloadPDF}>
           <Download size={20} color={Colors.white} />
           <Text style={styles.actionButtonText}>Download</Text>
         </TouchableOpacity>
@@ -1961,7 +644,61 @@ export default function ReceiptPreview() {
           <Printer size={20} color={Colors.white} />
           <Text style={styles.actionButtonText}>Print</Text>
         </TouchableOpacity>
-      </View>
+      </View> */}
+
+      
+<View style={styles.actionsContainer}>
+  <TouchableOpacity 
+    style={[styles.actionButton, styles.shareButton]} 
+    onPress={handleShare}
+  >
+    <Share2 size={20} color={Colors.white} />
+    <Text style={styles.actionButtonText}>Share</Text>
+  </TouchableOpacity>
+  
+  <TouchableOpacity 
+    style={[styles.actionButton, styles.downloadButton]} 
+    onPress={handleDownloadPDF}
+  >
+    <Download size={20} color={Colors.white} />
+    <Text style={styles.actionButtonText}>Download</Text>
+  </TouchableOpacity>
+  
+  <TouchableOpacity 
+    style={[styles.actionButton, styles.printButton]} 
+    onPress={handlePrint}
+  >
+    <Printer size={20} color={Colors.white} />
+    <Text style={styles.actionButtonText}>Print</Text>
+  </TouchableOpacity>
+</View>
+
+{/* <BluetoothPrinterModal
+  visible={printerModalVisible}
+  onClose={() => {
+    setPrinterModalVisible(false);
+    setPrintReceiptData(null);
+  }}
+  receiptData={printReceiptData}
+  receiptType={qrType || 'SALES'}
+  onPrintComplete={() => {
+    fetchReceipt();
+    setPrinterModalVisible(false);
+  }}
+/> */}
+<BluetoothPrinterModal
+  visible={printerModalVisible}
+  onClose={() => {
+    setPrinterModalVisible(false);
+    setPrintReceiptData(null);
+  }}
+  receiptData={printReceiptData}
+  receiptType={qrType || 'SALES'}
+  onPrintComplete={() => {
+    fetchReceipt();
+    setPrinterModalVisible(false);
+  }}
+/>
     </SafeAreaView>
   );
 }
@@ -2024,6 +761,7 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     padding: Spacing.md,
+    paddingBottom: Spacing['4xl'],
   },
   receiptCard: {
     backgroundColor: Colors.white,
@@ -2045,14 +783,28 @@ const styles = StyleSheet.create({
   },
   receiptSubtitle: {
     fontSize: Typography.md,
-    color: Colors.gray500,
+    fontWeight: '600',
+    color: Colors.gray700,
     marginTop: Spacing.xs,
+  },
+  receiptDetail: {
+    fontSize: Typography.sm,
+    color: Colors.gray500,
+    marginTop: 2,
+  },
+  divider: {
+    borderTopWidth: 1,
+    borderTopColor: Colors.gray200,
+    marginVertical: Spacing.md,
   },
   receiptSection: {
     marginBottom: Spacing.md,
-    paddingBottom: Spacing.md,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.gray100,
+  },
+  sectionTitle: {
+    fontSize: Typography.md,
+    fontWeight: '600',
+    color: Colors.gray900,
+    marginBottom: Spacing.sm,
   },
   receiptRow: {
     flexDirection: 'row',
@@ -2079,11 +831,29 @@ const styles = StyleSheet.create({
   changeText: {
     color: Colors.success,
   },
-  sectionTitle: {
-    fontSize: Typography.md,
-    fontWeight: '600',
+  discountValue: {
+    color: Colors.success,
+  },
+  staffRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    paddingVertical: 2,
+  },
+  staffRole: {
+    fontSize: Typography.sm,
+    color: Colors.gray600,
+    width: 80,
+  },
+  staffName: {
+    fontSize: Typography.sm,
+    fontWeight: '500',
     color: Colors.gray900,
-    marginBottom: Spacing.sm,
+  },
+  staffEmail: {
+    fontSize: Typography.xs,
+    color: Colors.gray400,
+    marginLeft: 4,
   },
   itemRow: {
     flexDirection: 'row',
@@ -2094,27 +864,34 @@ const styles = StyleSheet.create({
   },
   itemInfo: {
     flex: 1,
+    marginRight: Spacing.sm,
   },
   itemName: {
     fontSize: Typography.sm,
+    fontWeight: '500',
     color: Colors.gray900,
   },
   itemDetail: {
     fontSize: Typography.xs,
     color: Colors.gray500,
   },
+  itemSku: {
+    fontSize: Typography.xs,
+    color: Colors.gray400,
+  },
   itemReleased: {
     fontSize: Typography.xs,
     color: Colors.success,
     fontWeight: '500',
   },
+  itemReleasedBy: {
+    fontSize: Typography.xs,
+    color: Colors.primary,
+  },
   itemTotal: {
     fontSize: Typography.sm,
-    fontWeight: '500',
+    fontWeight: '600',
     color: Colors.gray900,
-  },
-  totalsSection: {
-    borderBottomWidth: 0,
   },
   totalRow: {
     flexDirection: 'row',
@@ -2136,12 +913,12 @@ const styles = StyleSheet.create({
     marginTop: Spacing.xs,
   },
   grandTotalLabel: {
-    fontSize: Typography.lg,
+    fontSize: Typography.md,
     fontWeight: 'bold',
     color: Colors.gray900,
   },
   grandTotalValue: {
-    fontSize: Typography.lg,
+    fontSize: Typography.md,
     fontWeight: 'bold',
     color: Colors.primary,
   },
@@ -2151,20 +928,18 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.md,
     borderWidth: 2,
     borderRadius: BorderRadius.lg,
-    borderColor: Colors.primary,
   },
   qrTitle: {
     fontSize: Typography.md,
     fontWeight: '600',
-    color: Colors.primary,
     marginBottom: Spacing.sm,
   },
   qrContainer: {
     alignItems: 'center',
   },
   qrImage: {
-    width: width * 0.5,
-    height: width * 0.5,
+    width: width * 0.4,
+    height: width * 0.4,
     backgroundColor: Colors.white,
     borderRadius: BorderRadius.lg,
   },
@@ -2174,8 +949,8 @@ const styles = StyleSheet.create({
     marginTop: Spacing.sm,
   },
   qrPlaceholder: {
-    width: width * 0.5,
-    height: width * 0.5,
+    width: width * 0.4,
+    height: width * 0.4,
     backgroundColor: Colors.gray100,
     borderRadius: BorderRadius.lg,
     alignItems: 'center',
@@ -2185,32 +960,6 @@ const styles = StyleSheet.create({
     marginTop: Spacing.sm,
     color: Colors.gray500,
     fontSize: Typography.sm,
-  },
-  qrStatusRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: Spacing.sm,
-  },
-  qrStatusItem: {
-    flex: 1,
-    minWidth: '45%',
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: Spacing.sm,
-    backgroundColor: Colors.gray50,
-    borderRadius: BorderRadius.sm,
-  },
-  qrStatusComplete: {
-    backgroundColor: Colors.success + '10',
-  },
-  qrStatusLabel: {
-    fontSize: Typography.xs,
-    color: Colors.gray600,
-  },
-  qrStatusPending: {
-    fontSize: Typography.xs,
-    color: Colors.warning,
   },
   receiptFooter: {
     marginTop: Spacing.md,
@@ -2224,7 +973,7 @@ const styles = StyleSheet.create({
     color: Colors.gray600,
   },
   footerSubtext: {
-    fontSize: Typography.sm,
+    fontSize: Typography.xs,
     color: Colors.gray400,
     marginTop: 2,
   },

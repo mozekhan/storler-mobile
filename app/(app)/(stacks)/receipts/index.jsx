@@ -363,7 +363,7 @@ import {
   BorderRadius,
   Shadows,
 } from "../../../../constants/theme";
-import { CustomHeader } from "@/components";
+import CustomHeader from "../../../../components/ui/CustomHeader";
 
 export default function Receipts() {
   const router = useRouter();
