@@ -33,6 +33,8 @@
 //   Shadows,
 // } from "../../../../../constants/theme";
 // import CustomHeader from "../../../../../components/ui/CustomHeader";
+// import * as FileSystem from 'expo-file-system';
+// import * as Sharing from 'expo-sharing';
 
 // const { width } = Dimensions.get("window");
 
@@ -43,6 +45,7 @@
 //   const [receipt, setReceipt] = useState(null);
 //   const [receiptData, setReceiptData] = useState(null);
 //   const [qrCodeImage, setQrCodeImage] = useState(null);
+//   const [transaction, setTransaction] = useState(null);
 
 //   useEffect(() => {
 //     fetchReceipt();
@@ -50,39 +53,36 @@
 
 //   const fetchReceipt = async () => {
 //     try {
+//       // Get receipt details
 //       const data = await ReceiptService.getReceipt(id);
 //       setReceipt(data);
 
 //       // Handle QR Code
 //       if (data.qrCode) {
-//         // If it's already a data URL with image format
 //         if (data.qrCode.startsWith("data:image")) {
 //           setQrCodeImage(data.qrCode);
-//         }
-//         // If it's a base64 string without prefix
-//         else if (data.qrCode.length > 100 && !data.qrCode.startsWith("http")) {
+//         } else if (data.qrCode.length > 100 && !data.qrCode.startsWith("http")) {
 //           setQrCodeImage(`data:image/png;base64,${data.qrCode}`);
-//         }
-//         // Otherwise it might be a URL or raw data
-//         else {
+//         } else {
 //           setQrCodeImage(data.qrCode);
 //         }
 //       }
 
-//       // Handle receipt data - use the cached data from the receipt
+//       // Get receipt data
 //       if (data.receiptData) {
 //         setReceiptData(data.receiptData);
-//       } else if (data.transactionId) {
-//         // If no cached data, fetch from transaction
+//       }
+
+//       // Get transaction if available
+//       if (data.transactionId) {
 //         const transactionId = data.transactionId._id || data.transactionId;
 //         if (transactionId) {
-//           const transaction = await TransactionService.getTransaction(transactionId);
-//           // Generate receipt data from transaction
-//           const generatedData = await ReceiptService.generateReceipt(
-//             transactionId,
-//             data.type
-//           );
-//           setReceiptData(generatedData);
+//           try {
+//             const trans = await TransactionService.getTransaction(transactionId);
+//             setTransaction(trans);
+//           } catch (e) {
+//             console.log('Could not fetch transaction');
+//           }
 //         }
 //       }
 //     } catch (error) {
@@ -95,9 +95,9 @@
 
 //   const handleShare = async () => {
 //     try {
-//       const transaction = receipt?.transactionId || {};
+//       const t = transaction || {};
 //       await Share.share({
-//         message: `Receipt: ${receipt?.receiptNumber || "N/A"}\nType: ${receipt?.type || "N/A"}\nTransaction: ${transaction?.transactionNumber || "N/A"}\nTotal: ${formatCurrency(transaction?.totalAmount || 0)}\nDate: ${formatDateTime(receipt?.createdAt)}`,
+//         message: `Receipt: ${receipt?.receiptNumber || "N/A"}\nType: ${receipt?.type || "N/A"}\nTransaction: ${t?.transactionNumber || "N/A"}\nTotal: ${formatCurrency(t?.totalAmount || 0)}\nDate: ${formatDateTime(receipt?.createdAt)}`,
 //         title: "Receipt",
 //       });
 //     } catch (error) {
@@ -107,10 +107,36 @@
 
 //   const handleDownload = async () => {
 //     try {
-//       await ReceiptService.downloadReceipt(id);
-//       Alert.alert("Success", "Receipt downloaded successfully");
+//       setLoading(true);
+      
+//       // Generate receipt PDF
+//       const transactionId = receipt?.transactionId?._id || receipt?.transactionId;
+//       if (transactionId) {
+//         const response = await ReceiptService.generateReceipt(transactionId, receipt.type);
+        
+//         if (response && response.downloadUrl) {
+//           const fileUri = FileSystem.documentDirectory + `receipt_${receipt.receiptNumber}.pdf`;
+//           const downloadResult = await FileSystem.downloadAsync(
+//             response.downloadUrl,
+//             fileUri
+//           );
+          
+//           if (downloadResult.status === 200) {
+//             if (await Sharing.isAvailableAsync()) {
+//               await Sharing.shareAsync(fileUri);
+//             } else {
+//               Alert.alert('Download Complete', `Receipt saved to ${fileUri}`);
+//             }
+//           }
+//         } else {
+//           Alert.alert('Info', 'Receipt file not available for download');
+//         }
+//       }
 //     } catch (error) {
+//       console.error("Download error:", error);
 //       Alert.alert("Error", "Failed to download receipt");
+//     } finally {
+//       setLoading(false);
 //     }
 //   };
 
@@ -128,6 +154,7 @@
 //     const icons = {
 //       SALES: "📄",
 //       PAYMENT: "💰",
+//       RELEASE: "📦",
 //       INVOICE: "📋",
 //       FINAL: "✅",
 //     };
@@ -138,36 +165,48 @@
 //     const colors = {
 //       SALES: Colors.primary,
 //       PAYMENT: Colors.success,
-//       INVOICE: Colors.warning,
+//       RELEASE: Colors.warning,
+//       INVOICE: '#8B5CF6',
 //       FINAL: Colors.success,
 //     };
 //     return colors[type] || Colors.gray;
 //   };
 
-//   const renderItemDetails = (item) => (
-//     <View key={item.id || item._id || item.productId} style={styles.itemRow}>
-//       <View style={styles.itemInfo}>
-//         <Text style={styles.itemName}>{item.name || "Item"}</Text>
-//         <Text style={styles.itemSku}>SKU: {item.sku || "N/A"}</Text>
-//         <View style={styles.itemDetails}>
-//           <Text style={styles.itemDetailText}>
-//             {item.quantity || 0} × {formatCurrency(item.unitPrice || 0)}
+//   const getTypeLabel = (type) => {
+//     const labels = {
+//       SALES: 'Sales Receipt',
+//       PAYMENT: 'Payment Receipt',
+//       RELEASE: 'Release Receipt',
+//       INVOICE: 'Invoice',
+//       FINAL: 'Final Receipt',
+//     };
+//     return labels[type] || type;
+//   };
+
+//   const renderItemDetails = (item) => {
+//     const name = item.name || item.productId?.name || 'Item';
+//     const qty = item.quantity || 0;
+//     const unitPrice = item.unitPrice || 0;
+//     const total = item.totalPrice || (qty * unitPrice);
+    
+//     return (
+//       <View key={item._id || item.id} style={styles.itemRow}>
+//         <View style={styles.itemInfo}>
+//           <Text style={styles.itemName}>{name}</Text>
+//           <Text style={styles.itemDetail}>
+//             Qty: {qty} × {formatCurrency(unitPrice)}
 //           </Text>
-//           {(item.taxAmount || 0) > 0 && (
-//             <Text style={styles.itemTaxText}>
-//               Tax: {formatCurrency(item.taxAmount || 0)}
-//             </Text>
+//           {item.sku && (
+//             <Text style={styles.itemSku}>SKU: {item.sku}</Text>
 //           )}
-//           {(item.discountAmount || 0) > 0 && (
-//             <Text style={styles.itemDiscountText}>
-//               Disc: {formatCurrency(item.discountAmount || 0)}
-//             </Text>
+//           {item.isReleased && (
+//             <Text style={styles.itemReleasedText}>✓ Released</Text>
 //           )}
 //         </View>
+//         <Text style={styles.itemTotal}>{formatCurrency(total)}</Text>
 //       </View>
-//       <Text style={styles.itemTotal}>{formatCurrency(item.totalPrice || 0)}</Text>
-//     </View>
-//   );
+//     );
+//   };
 
 //   if (loading) {
 //     return (
@@ -192,17 +231,14 @@
 //     );
 //   }
 
-//   // Safely get transaction data
-//   const transaction = receipt.transactionId || {};
-//   const summary = receiptData?.summary || {};
-//   const store = receiptData?.store || {};
-//   const staff = receiptData?.staff || {};
-//   const timeline = receiptData?.timeline || {};
-//   const qrCodes = receiptData?.qrCodes || {};
-//   const workflow = receiptData?.workflow || {};
-//   const additionalData = receiptData?.additionalData || {};
-//   const items = receiptData?.items || [];
-//   const releasedItems = receiptData?.releasedItems || [];
+//   const t = transaction || {};
+//   const data = receiptData || {};
+//   const store = data.store || {};
+//   const summary = data.summary || {};
+//   const staff = data.staff || {};
+//   const items = data.items || t.items || [];
+//   const releasedItems = data.releasedItems || t.itemsReleased || [];
+//   const timeline = data.timeline || {};
 
 //   return (
 //     <View style={styles.container}>
@@ -228,7 +264,7 @@
 //               <Text
 //                 style={[styles.typeText, { color: getTypeColor(receipt.type) }]}
 //               >
-//                 {receipt.type || "N/A"}
+//                 {getTypeLabel(receipt.type)}
 //               </Text>
 //             </View>
 //           </View>
@@ -258,19 +294,19 @@
 //               </Text>
 //             </View>
 //           </View>
+//           {receipt.printedAt && (
+//             <Text style={styles.printedAtText}>
+//               Printed at: {formatDateTime(receipt.printedAt)}
+//             </Text>
+//           )}
 //         </View>
 
-//         {/* Store Info - Only show if data exists */}
+//         {/* Store Info */}
 //         {store.name && (
 //           <View style={styles.detailsCard}>
 //             <Text style={styles.sectionTitle}>Store Information</Text>
 //             <Text style={styles.storeName}>{store.name}</Text>
 //             {store.address && <Text style={styles.storeDetail}>{store.address}</Text>}
-//             {store.city && store.state && (
-//               <Text style={styles.storeDetail}>
-//                 {store.city}, {store.state} {store.zipCode || ""}
-//               </Text>
-//             )}
 //             {store.phone && (
 //               <Text style={styles.storeDetail}>📞 {store.phone}</Text>
 //             )}
@@ -286,43 +322,29 @@
 //           <View style={styles.detailRow}>
 //             <Text style={styles.detailLabel}>Transaction #</Text>
 //             <Text style={styles.detailValue}>
-//               {transaction.transactionNumber || "N/A"}
+//               {t.transactionNumber || "N/A"}
 //             </Text>
 //           </View>
-//           {transaction.invoiceNumber && (
+//           {t.finalInvoiceNumber && (
 //             <View style={styles.detailRow}>
 //               <Text style={styles.detailLabel}>Invoice #</Text>
-//               <Text style={styles.detailValue}>
-//                 {transaction.invoiceNumber}
+//               <Text style={[styles.detailValue, styles.invoiceText]}>
+//                 {t.finalInvoiceNumber}
 //               </Text>
 //             </View>
 //           )}
 //           <View style={styles.detailRow}>
 //             <Text style={styles.detailLabel}>Status</Text>
 //             <Text style={[styles.detailValue, styles.statusValue]}>
-//               {transaction.status || workflow.status || "N/A"}
+//               {t.status || data.workflow?.status || "N/A"}
 //             </Text>
 //           </View>
-//           {/* Workflow Statuses */}
-//           {workflow.salesStatus && workflow.salesStatus !== "PENDING" && (
+//           {t.paymentMethod && (
 //             <View style={styles.detailRow}>
-//               <Text style={styles.detailLabel}>Sales Status</Text>
-//               <Text style={styles.detailValue}>{workflow.salesStatus}</Text>
+//               <Text style={styles.detailLabel}>Payment Method</Text>
+//               <Text style={styles.detailValue}>{t.paymentMethod}</Text>
 //             </View>
 //           )}
-//           {workflow.paymentStatus && workflow.paymentStatus !== "PENDING" && (
-//             <View style={styles.detailRow}>
-//               <Text style={styles.detailLabel}>Payment Status</Text>
-//               <Text style={styles.detailValue}>{workflow.paymentStatus}</Text>
-//             </View>
-//           )}
-//           {workflow.warehouseStatus && workflow.warehouseStatus !== "PENDING" && (
-//             <View style={styles.detailRow}>
-//               <Text style={styles.detailLabel}>Warehouse Status</Text>
-//               <Text style={styles.detailValue}>{workflow.warehouseStatus}</Text>
-//             </View>
-//           )}
-//           {/* Timeline */}
 //           {timeline.created && (
 //             <View style={styles.detailRow}>
 //               <Text style={styles.detailLabel}>Created</Text>
@@ -395,7 +417,7 @@
 //         {items.length > 0 && (
 //           <View style={styles.detailsCard}>
 //             <Text style={styles.sectionTitle}>Items ({items.length})</Text>
-//             {items.map((item, index) => renderItemDetails(item))}
+//             {items.map((item) => renderItemDetails(item))}
 //           </View>
 //         )}
 
@@ -411,9 +433,8 @@
 //                   <Text style={styles.itemName}>
 //                     {item.productName || "Item"}
 //                   </Text>
-//                   <Text style={styles.itemSku}>SKU: {item.sku || "N/A"}</Text>
-//                   <Text style={styles.itemDetailText}>
-//                     {item.quantityReleased || 0} × {formatCurrency(item.unitPrice || 0)}
+//                   <Text style={styles.itemDetail}>
+//                     Qty: {item.quantityReleased || 0} × {formatCurrency(item.unitPrice || 0)}
 //                   </Text>
 //                   {item.releasedByName && (
 //                     <Text style={styles.itemReleasedBy}>
@@ -430,119 +451,61 @@
 //         )}
 
 //         {/* Financial Summary */}
-//         {(summary.subtotal > 0 || summary.totalAmount > 0) && (
-//           <View style={styles.detailsCard}>
-//             <Text style={styles.sectionTitle}>Financial Summary</Text>
+//         <View style={styles.detailsCard}>
+//           <Text style={styles.sectionTitle}>Financial Summary</Text>
+//           <View style={styles.summaryRow}>
+//             <Text style={styles.summaryLabel}>Subtotal</Text>
+//             <Text style={styles.summaryValue}>
+//               {formatCurrency(summary.subtotal || t.subtotal || 0)}
+//             </Text>
+//           </View>
+//           <View style={styles.summaryRow}>
+//             <Text style={styles.summaryLabel}>Tax</Text>
+//             <Text style={styles.summaryValue}>
+//               {formatCurrency(summary.taxTotal || t.taxTotal || 0)}
+//             </Text>
+//           </View>
+//           {(summary.discountTotal || 0) > 0 && (
 //             <View style={styles.summaryRow}>
-//               <Text style={styles.summaryLabel}>Subtotal</Text>
-//               <Text style={styles.summaryValue}>
-//                 {formatCurrency(summary.subtotal || transaction.subtotal || 0)}
+//               <Text style={styles.summaryLabel}>Discount</Text>
+//               <Text style={[styles.summaryValue, styles.discountValue]}>
+//                 -{formatCurrency(summary.discountTotal)}
 //               </Text>
 //             </View>
-//             <View style={styles.summaryRow}>
-//               <Text style={styles.summaryLabel}>Tax</Text>
-//               <Text style={styles.summaryValue}>
-//                 {formatCurrency(summary.taxTotal || transaction.taxTotal || 0)}
-//               </Text>
-//             </View>
-//             {(summary.discountTotal || 0) > 0 && (
+//           )}
+//           <View style={[styles.summaryRow, styles.totalRow]}>
+//             <Text style={styles.totalLabel}>Total</Text>
+//             <Text style={styles.totalValue}>
+//               {formatCurrency(
+//                 summary.totalAmount || t.totalAmount || 0
+//               )}
+//             </Text>
+//           </View>
+//           {(summary.amountPaid || t.amountPaid || 0) > 0 && (
+//             <>
 //               <View style={styles.summaryRow}>
-//                 <Text style={styles.summaryLabel}>Discount</Text>
-//                 <Text style={[styles.summaryValue, styles.discountValue]}>
-//                   -{formatCurrency(summary.discountTotal)}
+//                 <Text style={styles.summaryLabel}>Amount Paid</Text>
+//                 <Text style={styles.summaryValue}>
+//                   {formatCurrency(summary.amountPaid || t.amountPaid || 0)}
 //                 </Text>
 //               </View>
-//             )}
-//             <View style={[styles.summaryRow, styles.totalRow]}>
-//               <Text style={styles.totalLabel}>Total</Text>
-//               <Text style={styles.totalValue}>
-//                 {formatCurrency(
-//                   summary.totalAmount || transaction.totalAmount || 0
-//                 )}
-//               </Text>
-//             </View>
-//             {(summary.amountPaid || 0) > 0 && (
-//               <>
+//               {(summary.changeAmount || t.changeAmount || 0) > 0 && (
 //                 <View style={styles.summaryRow}>
-//                   <Text style={styles.summaryLabel}>Amount Paid</Text>
-//                   <Text style={styles.summaryValue}>
-//                     {formatCurrency(summary.amountPaid)}
+//                   <Text style={styles.summaryLabel}>Change</Text>
+//                   <Text style={[styles.summaryValue, styles.changeText]}>
+//                     {formatCurrency(summary.changeAmount || t.changeAmount || 0)}
 //                   </Text>
 //                 </View>
-//                 {(summary.changeAmount || 0) > 0 && (
-//                   <View style={styles.summaryRow}>
-//                     <Text style={styles.summaryLabel}>Change</Text>
-//                     <Text style={styles.summaryValue}>
-//                       {formatCurrency(summary.changeAmount)}
-//                     </Text>
-//                   </View>
-//                 )}
-//                 <View style={styles.summaryRow}>
-//                   <Text style={styles.summaryLabel}>Payment Method</Text>
-//                   <Text style={styles.summaryValue}>
-//                     {summary.paymentMethod || "N/A"}
-//                   </Text>
-//                 </View>
-//               </>
-//             )}
-//           </View>
-//         )}
-
-//         {/* Additional Data */}
-//         {(additionalData.customerName || additionalData.notes || additionalData.orderType) && (
-//           <View style={styles.detailsCard}>
-//             <Text style={styles.sectionTitle}>Additional Information</Text>
-//             {additionalData.customerName && (
-//               <View style={styles.detailRow}>
-//                 <Text style={styles.detailLabel}>Customer</Text>
-//                 <Text style={styles.detailValue}>
-//                   {additionalData.customerName}
+//               )}
+//               <View style={styles.summaryRow}>
+//                 <Text style={styles.summaryLabel}>Payment Method</Text>
+//                 <Text style={styles.summaryValue}>
+//                   {summary.paymentMethod || t.paymentMethod || "N/A"}
 //                 </Text>
 //               </View>
-//             )}
-//             {additionalData.customerEmail && (
-//               <View style={styles.detailRow}>
-//                 <Text style={styles.detailLabel}>Customer Email</Text>
-//                 <Text style={styles.detailValue}>
-//                   {additionalData.customerEmail}
-//                 </Text>
-//               </View>
-//             )}
-//             {additionalData.customerPhone && (
-//               <View style={styles.detailRow}>
-//                 <Text style={styles.detailLabel}>Customer Phone</Text>
-//                 <Text style={styles.detailValue}>
-//                   {additionalData.customerPhone}
-//                 </Text>
-//               </View>
-//             )}
-//             {additionalData.orderType && (
-//               <View style={styles.detailRow}>
-//                 <Text style={styles.detailLabel}>Order Type</Text>
-//                 <Text style={styles.detailValue}>
-//                   {additionalData.orderType}
-//                 </Text>
-//               </View>
-//             )}
-//             {additionalData.notes && (
-//               <View style={styles.detailRow}>
-//                 <Text style={styles.detailLabel}>Notes</Text>
-//                 <Text style={[styles.detailValue, styles.notesValue]}>
-//                   {additionalData.notes}
-//                 </Text>
-//               </View>
-//             )}
-//             {additionalData.tags && additionalData.tags.length > 0 && (
-//               <View style={styles.tagsContainer}>
-//                 {additionalData.tags.map((tag, index) => (
-//                   <View key={index} style={styles.tag}>
-//                     <Text style={styles.tagText}>{tag}</Text>
-//                   </View>
-//                 ))}
-//               </View>
-//             )}
-//           </View>
-//         )}
+//             </>
+//           )}
+//         </View>
 
 //         {/* QR Code Section */}
 //         <View style={styles.qrCard}>
@@ -555,7 +518,6 @@
 //                 resizeMode="contain"
 //                 onError={(error) => {
 //                   console.error("QR Image loading error:", error.nativeEvent);
-//                   // Try to fix the QR code if it failed
 //                   if (qrCodeImage && !qrCodeImage.startsWith("data:image")) {
 //                     setQrCodeImage(`data:image/png;base64,${qrCodeImage}`);
 //                   }
@@ -563,7 +525,7 @@
 //               />
 //               <Text style={styles.qrHint}>Scan this QR code</Text>
 //               {receipt.type && (
-//                 <Text style={styles.qrType}>Type: {receipt.type}</Text>
+//                 <Text style={styles.qrType}>Type: {getTypeLabel(receipt.type)}</Text>
 //               )}
 //             </View>
 //           ) : (
@@ -632,316 +594,7 @@
 //   );
 // }
 
-// const styles = StyleSheet.create({
-//   container: { flex: 1, backgroundColor: Colors.gray50 },
-//   loadingContainer: {
-//     flex: 1,
-//     justifyContent: "center",
-//     alignItems: "center",
-//     backgroundColor: Colors.white,
-//   },
-//   loadingText: {
-//     marginTop: Spacing.md,
-//     color: Colors.gray500,
-//     fontSize: Typography.md,
-//   },
-//   errorContainer: {
-//     flex: 1,
-//     justifyContent: "center",
-//     alignItems: "center",
-//     backgroundColor: Colors.white,
-//   },
-//   errorText: { fontSize: Typography.lg, color: Colors.gray700 },
-//   closeButton: {
-//     marginTop: Spacing.md,
-//     padding: Spacing.md,
-//     backgroundColor: Colors.primary,
-//     borderRadius: BorderRadius.lg,
-//   },
-//   closeButtonText: { color: Colors.white, fontWeight: "600" },
-//   scrollView: { flex: 1 },
-//   scrollContent: { padding: Spacing.md, paddingBottom: Spacing["4xl"] },
-//   headerCard: {
-//     backgroundColor: Colors.white,
-//     borderRadius: BorderRadius.lg,
-//     padding: Spacing.md,
-//     marginBottom: Spacing.md,
-//     ...Shadows.sm,
-//   },
-//   headerRow: {
-//     flexDirection: "row",
-//     justifyContent: "space-between",
-//     alignItems: "flex-start",
-//   },
-//   headerLeft: { flex: 1 },
-//   headerLabel: { fontSize: Typography.sm, color: Colors.gray500 },
-//   headerNumber: {
-//     fontSize: Typography.xl,
-//     fontWeight: "bold",
-//     color: Colors.gray900,
-//   },
-//   typeContainer: {
-//     flexDirection: "row",
-//     alignItems: "center",
-//     paddingHorizontal: Spacing.sm,
-//     paddingVertical: 4,
-//     borderRadius: BorderRadius.sm,
-//     gap: 4,
-//   },
-//   typeIcon: { fontSize: Typography.md },
-//   typeText: { fontSize: Typography.sm, fontWeight: "600" },
-//   headerMeta: {
-//     flexDirection: "row",
-//     justifyContent: "space-between",
-//     alignItems: "center",
-//     marginTop: Spacing.sm,
-//   },
-//   headerDate: { fontSize: Typography.sm, color: Colors.gray500 },
-//   statusBadge: {
-//     paddingHorizontal: Spacing.sm,
-//     paddingVertical: 2,
-//     borderRadius: BorderRadius.sm,
-//   },
-//   statusText: { fontSize: Typography.xs, fontWeight: "500" },
-//   statusPrinted: { backgroundColor: Colors.success + "20" },
-//   statusPrintedText: { color: Colors.success },
-//   statusNotPrinted: { backgroundColor: Colors.warning + "20" },
-//   statusNotPrintedText: { color: Colors.warning },
-//   detailsCard: {
-//     backgroundColor: Colors.white,
-//     borderRadius: BorderRadius.lg,
-//     padding: Spacing.md,
-//     marginBottom: Spacing.md,
-//     ...Shadows.sm,
-//   },
-//   sectionTitle: {
-//     fontSize: Typography.lg,
-//     fontWeight: "600",
-//     color: Colors.gray900,
-//     marginBottom: Spacing.sm,
-//   },
-//   storeName: {
-//     fontSize: Typography.md,
-//     fontWeight: "600",
-//     color: Colors.gray900,
-//   },
-//   storeDetail: { fontSize: Typography.sm, color: Colors.gray500, marginTop: 2 },
-//   detailRow: {
-//     flexDirection: "row",
-//     justifyContent: "space-between",
-//     paddingVertical: Spacing.xs,
-//     borderBottomWidth: 1,
-//     borderBottomColor: Colors.gray50,
-//   },
-//   detailLabel: { fontSize: Typography.sm, color: Colors.gray600 },
-//   detailValue: {
-//     fontSize: Typography.sm,
-//     fontWeight: "500",
-//     color: Colors.gray900,
-//     flex: 1,
-//     textAlign: "right",
-//   },
-//   statusValue: { color: Colors.primary },
-//   notesValue: { textAlign: "left", flex: 1 },
-//   staffRow: {
-//     paddingVertical: Spacing.xs,
-//     borderBottomWidth: 1,
-//     borderBottomColor: Colors.gray50,
-//   },
-//   staffRole: {
-//     fontSize: Typography.xs,
-//     color: Colors.gray500,
-//     fontWeight: "600",
-//   },
-//   staffName: {
-//     fontSize: Typography.sm,
-//     color: Colors.gray900,
-//     fontWeight: "500",
-//   },
-//   staffEmail: { fontSize: Typography.xs, color: Colors.gray400 },
-//   itemRow: {
-//     flexDirection: "row",
-//     justifyContent: "space-between",
-//     paddingVertical: Spacing.xs,
-//     borderBottomWidth: 1,
-//     borderBottomColor: Colors.gray50,
-//   },
-//   itemInfo: { flex: 1, marginRight: Spacing.sm },
-//   itemName: {
-//     fontSize: Typography.sm,
-//     fontWeight: "500",
-//     color: Colors.gray900,
-//   },
-//   itemSku: { fontSize: Typography.xs, color: Colors.gray500 },
-//   itemDetails: { flexDirection: "row", flexWrap: "wrap", gap: 4, marginTop: 2 },
-//   itemDetailText: { fontSize: Typography.xs, color: Colors.gray600 },
-//   itemTaxText: { fontSize: Typography.xs, color: Colors.warning },
-//   itemDiscountText: { fontSize: Typography.xs, color: Colors.success },
-//   itemReleasedBy: {
-//     fontSize: Typography.xs,
-//     color: Colors.primary,
-//     marginTop: 1,
-//   },
-//   itemTotal: {
-//     fontSize: Typography.sm,
-//     fontWeight: "600",
-//     color: Colors.gray900,
-//   },
-//   summaryRow: {
-//     flexDirection: "row",
-//     justifyContent: "space-between",
-//     paddingVertical: 2,
-//   },
-//   summaryLabel: { fontSize: Typography.sm, color: Colors.gray600 },
-//   summaryValue: {
-//     fontSize: Typography.sm,
-//     fontWeight: "500",
-//     color: Colors.gray900,
-//   },
-//   discountValue: { color: Colors.success },
-//   totalRow: {
-//     borderTopWidth: 1,
-//     borderTopColor: Colors.gray200,
-//     paddingTop: Spacing.sm,
-//     marginTop: Spacing.xs,
-//   },
-//   totalLabel: {
-//     fontSize: Typography.md,
-//     fontWeight: "bold",
-//     color: Colors.gray900,
-//   },
-//   totalValue: {
-//     fontSize: Typography.md,
-//     fontWeight: "bold",
-//     color: Colors.primary,
-//   },
-//   tagsContainer: {
-//     flexDirection: "row",
-//     flexWrap: "wrap",
-//     gap: Spacing.xs,
-//     marginTop: Spacing.xs,
-//   },
-//   tag: {
-//     backgroundColor: Colors.gray100,
-//     paddingHorizontal: Spacing.sm,
-//     paddingVertical: 2,
-//     borderRadius: BorderRadius.sm,
-//   },
-//   tagText: { fontSize: Typography.xs, color: Colors.gray700 },
-//   qrCard: {
-//     backgroundColor: Colors.white,
-//     borderRadius: BorderRadius.lg,
-//     padding: Spacing.md,
-//     marginBottom: Spacing.md,
-//     alignItems: "center",
-//     ...Shadows.sm,
-//   },
-//   qrContainer: { alignItems: "center" },
-//   qrImage: {
-//     width: width * 0.4,
-//     height: width * 0.4,
-//     backgroundColor: Colors.white,
-//     borderRadius: BorderRadius.lg,
-//     borderWidth: 1,
-//     borderColor: Colors.gray200,
-//   },
-//   qrHint: {
-//     fontSize: Typography.sm,
-//     color: Colors.gray500,
-//     marginTop: Spacing.sm,
-//   },
-//   qrType: { fontSize: Typography.xs, color: Colors.gray400, marginTop: 1 },
-//   qrPlaceholder: {
-//     width: width * 0.4,
-//     height: width * 0.4,
-//     backgroundColor: Colors.gray100,
-//     borderRadius: BorderRadius.lg,
-//     alignItems: "center",
-//     justifyContent: "center",
-//   },
-//   qrPlaceholderText: {
-//     marginTop: Spacing.sm,
-//     color: Colors.gray500,
-//     fontSize: Typography.sm,
-//   },
-//   regenerateButton: {
-//     marginTop: Spacing.md,
-//     backgroundColor: Colors.primary,
-//     paddingHorizontal: Spacing.md,
-//     paddingVertical: Spacing.sm,
-//     borderRadius: BorderRadius.lg,
-//   },
-//   regenerateButtonText: {
-//     color: Colors.white,
-//     fontWeight: "600",
-//     fontSize: Typography.sm,
-//   },
-//   footerCard: {
-//     backgroundColor: Colors.white,
-//     borderRadius: BorderRadius.lg,
-//     padding: Spacing.md,
-//     alignItems: "center",
-//     ...Shadows.sm,
-//   },
-//   footerText: {
-//     fontSize: Typography.md,
-//     color: Colors.gray600,
-//     textAlign: "center",
-//   },
-//   actionsContainer: {
-//     flexDirection: "row",
-//     padding: Spacing.md,
-//     paddingBottom: Spacing.xl,
-//     backgroundColor: Colors.white,
-//     borderTopWidth: 1,
-//     borderTopColor: Colors.gray200,
-//     gap: Spacing.sm,
-//   },
-//   actionButton: {
-//     flex: 1,
-//     flexDirection: "row",
-//     alignItems: "center",
-//     justifyContent: "center",
-//     paddingVertical: Spacing.md,
-//     borderRadius: BorderRadius.lg,
-//     gap: 4,
-//   },
-//   shareActionButton: { backgroundColor: Colors.primary },
-//   printActionButton: { backgroundColor: Colors.warning },
-//   downloadActionButton: { backgroundColor: Colors.success },
-//   actionButtonText: {
-//     color: Colors.white,
-//     fontWeight: "600",
-//     fontSize: Typography.sm,
-//   },
-// });
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+// screens/receipts/[id]/index.jsx (Updated with print functionality)
 import React, { useEffect, useState } from "react";
 import {
   View,
@@ -977,6 +630,8 @@ import {
   Shadows,
 } from "../../../../../constants/theme";
 import CustomHeader from "../../../../../components/ui/CustomHeader";
+import BluetoothPrinterModal from "../../../../../components/print/BluetoothPrinterModal";
+import { usePrinter } from "../../../../../hooks/usePrinter";
 import * as FileSystem from 'expo-file-system';
 import * as Sharing from 'expo-sharing';
 
@@ -991,17 +646,24 @@ export default function ReceiptDetail() {
   const [qrCodeImage, setQrCodeImage] = useState(null);
   const [transaction, setTransaction] = useState(null);
 
+  // Use the printer hook
+  const {
+    printerModalVisible,
+    printReceiptData,
+    openPrintModal,
+    closePrintModal,
+    handlePrintComplete,
+  } = usePrinter();
+
   useEffect(() => {
     fetchReceipt();
   }, [id]);
 
   const fetchReceipt = async () => {
     try {
-      // Get receipt details
       const data = await ReceiptService.getReceipt(id);
       setReceipt(data);
 
-      // Handle QR Code
       if (data.qrCode) {
         if (data.qrCode.startsWith("data:image")) {
           setQrCodeImage(data.qrCode);
@@ -1012,12 +674,10 @@ export default function ReceiptDetail() {
         }
       }
 
-      // Get receipt data
       if (data.receiptData) {
         setReceiptData(data.receiptData);
       }
 
-      // Get transaction if available
       if (data.transactionId) {
         const transactionId = data.transactionId._id || data.transactionId;
         if (transactionId) {
@@ -1053,7 +713,6 @@ export default function ReceiptDetail() {
     try {
       setLoading(true);
       
-      // Generate receipt PDF
       const transactionId = receipt?.transactionId?._id || receipt?.transactionId;
       if (transactionId) {
         const response = await ReceiptService.generateReceipt(transactionId, receipt.type);
@@ -1084,14 +743,58 @@ export default function ReceiptDetail() {
     }
   };
 
-  const handlePrint = async () => {
-    try {
-      await ReceiptService.markAsPrinted(id);
-      Alert.alert("Success", "Receipt marked as printed");
-      fetchReceipt();
-    } catch (error) {
-      Alert.alert("Error", "Failed to mark receipt as printed");
+  const handlePrint = () => {
+    const t = transaction || {};
+    const data = receiptData || {};
+    const store = data.store || {};
+    const summary = data.summary || {};
+    const items = data.items || t.items || [];
+
+    // Prepare receipt data for printing
+    const printData = {
+      store: {
+        name: store.name || t?.storeId?.name || 'Store',
+        address: store.address || '',
+        phone: store.phone || '',
+        email: store.email || '',
+      },
+      transaction: {
+        number: t?.transactionNumber || 'N/A',
+        createdAt: t?.createdAt || new Date(),
+        status: t?.status || 'N/A',
+      },
+      items: items.map(item => ({
+        name: item.name || item.productId?.name || 'Item',
+        sku: item.sku || item.productId?.sku || '',
+        quantity: item.quantity || 0,
+        unitPrice: item.unitPrice || 0,
+        totalPrice: item.totalPrice || (item.quantity || 0) * (item.unitPrice || 0),
+        taxAmount: item.taxAmount || 0,
+      })),
+      summary: {
+        subtotal: summary.subtotal || t?.subtotal || 0,
+        taxTotal: summary.taxTotal || t?.taxTotal || 0,
+        discountTotal: summary.discountTotal || 0,
+        totalAmount: summary.totalAmount || t?.totalAmount || 0,
+        amountPaid: summary.amountPaid || t?.amountPaid || 0,
+        changeAmount: summary.changeAmount || t?.changeAmount || 0,
+        paymentMethod: summary.paymentMethod || t?.paymentMethod || '',
+      },
+      payment: {
+        method: t?.paymentMethod || '',
+        reference: t?.paymentReference || '',
+      },
+      invoice: {
+        number: t?.finalInvoiceNumber || '',
+      },
+      qrCode: qrCodeImage,
+    };
+
+    if (data.staff) {
+      printData.staff = data.staff;
     }
+
+    openPrintModal(printData, receipt?.type || 'SALES');
   };
 
   const getTypeIcon = (type) => {
@@ -1534,6 +1237,18 @@ export default function ReceiptDetail() {
           <Text style={styles.actionButtonText}>Download</Text>
         </TouchableOpacity>
       </View>
+
+      {/* Bluetooth Printer Modal */}
+      <BluetoothPrinterModal
+        visible={printerModalVisible}
+        onClose={closePrintModal}
+        receiptData={printReceiptData}
+        receiptType={receipt?.type || 'SALES'}
+        onPrintComplete={() => {
+          handlePrintComplete();
+          fetchReceipt();
+        }}
+      />
     </View>
   );
 }

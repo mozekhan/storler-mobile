@@ -48,7 +48,7 @@ export default function TabsLayout() {
           options={{
             title: tab.title,
             tabBarIcon: ({ color, size }) => <tab.icon color={color} size='34' />,
-            href: tab.show ? `/(app)/(tabs)/${tab.name}` : null,
+            // href: tab.show ? `/(app)/(tabs)/${tab.name}` : null,
           }}
         />
       ))}

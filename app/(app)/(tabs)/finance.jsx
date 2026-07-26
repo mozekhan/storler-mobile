@@ -544,21 +544,46 @@ export default function Finance() {
           `Change: ${formatCurrency(result.change || 0)}\n` +
           `Transaction: ${result.transaction.transactionNumber}`,
         [
-          {
-            text: "View Receipt",
-            onPress: () => {
-              if (result.paymentQR) {
-                router.push({
-                  pathname: "/(app)/(modals)/receipt-preview",
-                  params: {
-                    transactionId: selectedTransaction._id,
-                    qrData: result.paymentQR,
-                    qrType: "PAYMENT",
-                    mode: "payment",
-                  },
-                });
-              }
-            },
+          // {
+          //   text: "View Receipt",
+            // onPress: () => {
+            //   if (result.paymentQR) {
+            //     router.push({
+            //       pathname: "/(app)/(modals)/receipt-preview",
+            //       params: {
+            //         transactionId: selectedTransaction._id,
+            //         qrData: result.paymentQR,
+            //         qrType: "PAYMENT",
+            //         mode: "payment",
+            //       },
+            //     });
+            //   }
+            // },
+            {
+  text: "View Receipt",
+  onPress: () => {
+    setPaymentModal(false);
+    setSelectedTransaction(null);
+    setAmountPaid("");
+    setPaymentReference("");
+    setPaymentDetails({});
+    setDropdownVisible(false);
+
+    const paymentQR = result.paymentQR || result.transaction?.paymentQR;
+    if (paymentQR) {
+      router.push({
+        pathname: "/(app)/(modals)/receipt-preview",
+        params: {
+          transactionId: selectedTransaction._id,
+          qrData: paymentQR,
+          qrType: "PAYMENT",
+          mode: "payment",
+        },
+      });
+    } else {
+      console.warn("No paymentQR returned, cannot open receipt preview", result);
+    }
+  },
           },
           {
             text: "Done",
