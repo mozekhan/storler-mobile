@@ -22,6 +22,7 @@
 //   UserPlus,
 //   X,
 //   Mail,
+//   ChevronRight,
 // } from "lucide-react-native";
 // import UserService from "../../../services/userService";
 // import StoreService from "../../../services/storeService";
@@ -34,6 +35,7 @@
 //   Shadows,
 // } from "../../../constants/theme";
 // import { Roles } from "../../../constants/roles";
+// import CustomHeader from "../../../components/ui/CustomHeader";
 
 // export default function StaffManagement() {
 //   const router = useRouter();
@@ -202,6 +204,7 @@
 //     return colors[role] || styles.roleDefaultText;
 //   };
 
+//   // UPDATED: renderStaff now wraps everything in TouchableOpacity
 //   const renderStaff = ({ item }) => {
 //     const roleStyle = getRoleColor(item.role);
 //     const roleTextStyle = getRoleTextColor(item.role);
@@ -213,7 +216,6 @@
 //         onPress={() => router.push(`/(admin)/staff/${item._id}`)}
 //         activeOpacity={0.7}
 //       >
-//         {/* <View style={styles.staffItem}> */}
 //         <View style={styles.staffItemRow}>
 //           <View style={styles.avatarContainer}>
 //             <Text style={styles.avatarText}>
@@ -266,22 +268,30 @@
 //             {item.storeId?.name || "No Store"}
 //           </Text>
 //           <View style={styles.staffItemActions}>
+//             {/* Edit button - stops propagation to prevent navigation */}
 //             <TouchableOpacity
 //               style={styles.actionButton}
-//               onPress={() => handleEdit(item)}
+//               onPress={(e) => {
+//                 e.stopPropagation();
+//                 handleEdit(item);
+//               }}
 //             >
 //               <Edit size={18} color={Colors.primary} />
 //             </TouchableOpacity>
+//             {/* Delete button - stops propagation to prevent navigation */}
 //             <TouchableOpacity
 //               style={styles.actionButton}
-//               onPress={() => handleDelete(item._id)}
+//               onPress={(e) => {
+//                 e.stopPropagation();
+//                 handleDelete(item._id);
+//               }}
 //             >
 //               <Trash2 size={18} color={Colors.error} />
 //             </TouchableOpacity>
+//             <ChevronRight size={18} color={Colors.gray400} />
 //           </View>
 //         </View>
 //       </TouchableOpacity>
-//       // </View>
 //     );
 //   };
 
@@ -295,6 +305,8 @@
 
 //   return (
 //     <View style={styles.container}>
+//       <CustomHeader title="Staff Management" showBack={true} />
+
 //       <View style={styles.header}>
 //         <View style={styles.searchContainer}>
 //           <Search size={20} color={Colors.gray400} />
@@ -334,6 +346,7 @@
 //         )}
 //       />
 
+//       {/* Modal remains the same */}
 //       <Modal visible={showModal} animationType="slide" transparent={true}>
 //         <View style={styles.modalOverlay}>
 //           <View style={styles.modalContent}>
@@ -524,6 +537,8 @@
 // const styles = StyleSheet.create({
 //   container: { flex: 1, backgroundColor: Colors.gray50 },
 //   loadingContainer: { flex: 1, justifyContent: "center", alignItems: "center" },
+
+//   // Header
 //   header: {
 //     backgroundColor: Colors.white,
 //     padding: Spacing.md,
@@ -551,8 +566,12 @@
 //     padding: Spacing.md,
 //     borderRadius: BorderRadius.lg,
 //   },
+
+//   // List
 //   list: { flex: 1 },
 //   listContent: { padding: Spacing.md },
+
+//   // Staff Item - Updated for TouchableOpacity
 //   staffItem: {
 //     backgroundColor: Colors.white,
 //     borderRadius: BorderRadius.lg,
@@ -596,6 +615,8 @@
 //     marginLeft: 4,
 //   },
 //   staffItemRight: { alignItems: "flex-end" },
+
+//   // Role Badges
 //   roleBadge: {
 //     paddingHorizontal: Spacing.sm,
 //     paddingVertical: 2,
@@ -620,6 +641,8 @@
 //   roleWarehouseStaffText: { color: "#92400E" },
 //   roleDefault: { backgroundColor: Colors.gray200 },
 //   roleDefaultText: { color: Colors.gray700 },
+
+//   // Status Badges
 //   statusBadge: {
 //     paddingHorizontal: Spacing.sm,
 //     paddingVertical: 2,
@@ -631,6 +654,8 @@
 //   statusInactive: { backgroundColor: Colors.error + "20" },
 //   statusInactiveText: { color: Colors.error },
 //   statusText: { fontSize: Typography.xs, fontWeight: "500" },
+
+//   // Footer
 //   staffItemFooter: {
 //     flexDirection: "row",
 //     justifyContent: "space-between",
@@ -641,10 +666,14 @@
 //     borderTopColor: Colors.gray100,
 //   },
 //   staffItemStore: { fontSize: Typography.xs, color: Colors.gray500 },
-//   staffItemActions: { flexDirection: "row" },
+//   staffItemActions: { flexDirection: "row", alignItems: "center" },
 //   actionButton: { padding: Spacing.sm },
+
+//   // Empty State
 //   emptyContainer: { paddingVertical: Spacing["4xl"], alignItems: "center" },
 //   emptyText: { color: Colors.gray500 },
+
+//   // Modal (unchanged)
 //   modalOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.5)" },
 //   modalContent: {
 //     flex: 1,
@@ -730,6 +759,31 @@
 //   buttonDisabled: { opacity: 0.7 },
 // });
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+// app/(admin)/staff/index.jsx
 import React, { useState, useEffect } from "react";
 import {
   View,
@@ -755,6 +809,8 @@ import {
   X,
   Mail,
   ChevronRight,
+  Shield,
+  Store,
 } from "lucide-react-native";
 import UserService from "../../../services/userService";
 import StoreService from "../../../services/storeService";
@@ -789,6 +845,9 @@ export default function StaffManagement() {
     storeId: "",
   });
 
+  // Track if user is Super Admin
+  const [isSuperAdmin, setIsSuperAdmin] = useState(false);
+
   useEffect(() => {
     fetchData();
   }, [searchTerm]);
@@ -820,21 +879,29 @@ export default function StaffManagement() {
       return;
     }
 
-    if (!formData.storeId && stores.length > 1) {
+    // Validate store selection for non-super-admin roles
+    if (formData.role !== Roles.SUPER_ADMIN && !formData.storeId) {
       Alert.alert("Error", "Please select a store for this user");
       return;
     }
 
     setSubmitting(true);
     try {
+      const payload = {
+        firstName: formData.firstName,
+        lastName: formData.lastName,
+        email: formData.email,
+        phone: formData.phone,
+        role: formData.role,
+      };
+
+      // Only include storeId for non-super-admin roles
+      if (formData.role !== Roles.SUPER_ADMIN) {
+        payload.storeId = formData.storeId;
+      }
+
       if (editingUser) {
-        await UserService.updateUser(editingUser._id, {
-          firstName: formData.firstName,
-          lastName: formData.lastName,
-          phone: formData.phone,
-          role: formData.role,
-          storeId: formData.storeId,
-        });
+        await UserService.updateUser(editingUser._id, payload);
         Alert.alert("Success", "Staff updated successfully");
       } else {
         if (!formData.password) {
@@ -842,7 +909,8 @@ export default function StaffManagement() {
           setSubmitting(false);
           return;
         }
-        await UserService.createUser(formData);
+        payload.password = formData.password;
+        await UserService.createUser(payload);
         Alert.alert("Success", "Staff created successfully");
       }
       setShowModal(false);
@@ -852,7 +920,7 @@ export default function StaffManagement() {
     } catch (error) {
       Alert.alert(
         "Error",
-        error.response?.data?.message || "Failed to save staff",
+        error.response?.data?.message || "Failed to save staff"
       );
     } finally {
       setSubmitting(false);
@@ -867,12 +935,16 @@ export default function StaffManagement() {
       password: "",
       phone: "",
       role: Roles.SALES_ATTENDANT,
-      storeId: stores.length > 0 ? stores[0].value : "",
+      storeId: "",
     });
+    setIsSuperAdmin(false);
   };
 
   const handleEdit = (user) => {
     setEditingUser(user);
+    const isSuperAdminRole = user.role === Roles.SUPER_ADMIN;
+    setIsSuperAdmin(isSuperAdminRole);
+    
     setFormData({
       firstName: user.firstName,
       lastName: user.lastName,
@@ -880,7 +952,8 @@ export default function StaffManagement() {
       password: "",
       phone: user.phone || "",
       role: user.role,
-      storeId: user.storeId?._id || user.storeId || "",
+      // Super Admin doesn't have a storeId
+      storeId: isSuperAdminRole ? "" : (user.storeId?._id || user.storeId || ""),
     });
     setShowModal(true);
   };
@@ -904,7 +977,7 @@ export default function StaffManagement() {
             }
           },
         },
-      ],
+      ]
     );
   };
 
@@ -936,11 +1009,11 @@ export default function StaffManagement() {
     return colors[role] || styles.roleDefaultText;
   };
 
-  // UPDATED: renderStaff now wraps everything in TouchableOpacity
   const renderStaff = ({ item }) => {
     const roleStyle = getRoleColor(item.role);
     const roleTextStyle = getRoleTextColor(item.role);
     const isActive = item.isActive !== false;
+    const isSuperAdminRole = item.role === Roles.SUPER_ADMIN;
 
     return (
       <TouchableOpacity
@@ -997,10 +1070,16 @@ export default function StaffManagement() {
         </View>
         <View style={styles.staffItemFooter}>
           <Text style={styles.staffItemStore}>
-            {item.storeId?.name || "No Store"}
+            {isSuperAdminRole ? (
+              <View style={styles.allStoresBadge}>
+                <Shield size={12} color={Colors.primary} />
+                <Text style={styles.allStoresText}>All Stores</Text>
+              </View>
+            ) : (
+              item.storeId?.name || "No Store"
+            )}
           </Text>
           <View style={styles.staffItemActions}>
-            {/* Edit button - stops propagation to prevent navigation */}
             <TouchableOpacity
               style={styles.actionButton}
               onPress={(e) => {
@@ -1010,7 +1089,6 @@ export default function StaffManagement() {
             >
               <Edit size={18} color={Colors.primary} />
             </TouchableOpacity>
-            {/* Delete button - stops propagation to prevent navigation */}
             <TouchableOpacity
               style={styles.actionButton}
               onPress={(e) => {
@@ -1078,7 +1156,6 @@ export default function StaffManagement() {
         )}
       />
 
-      {/* Modal remains the same */}
       <Modal visible={showModal} animationType="slide" transparent={true}>
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
@@ -1125,6 +1202,7 @@ export default function StaffManagement() {
                   />
                 </View>
               </View>
+
               <View style={styles.formField}>
                 <Text style={styles.formLabel}>Email *</Text>
                 <TextInput
@@ -1138,6 +1216,7 @@ export default function StaffManagement() {
                   placeholderTextColor={Colors.gray400}
                 />
               </View>
+
               {!editingUser && (
                 <View style={styles.formField}>
                   <Text style={styles.formLabel}>Password *</Text>
@@ -1153,6 +1232,7 @@ export default function StaffManagement() {
                   />
                 </View>
               )}
+
               <View style={styles.formField}>
                 <Text style={styles.formLabel}>Phone</Text>
                 <TextInput
@@ -1165,6 +1245,7 @@ export default function StaffManagement() {
                   placeholderTextColor={Colors.gray400}
                 />
               </View>
+
               <View style={styles.formField}>
                 <Text style={styles.formLabel}>Role *</Text>
                 <View style={styles.rolePicker}>
@@ -1175,7 +1256,16 @@ export default function StaffManagement() {
                         styles.roleOption,
                         formData.role === role && styles.roleOptionActive,
                       ]}
-                      onPress={() => setFormData({ ...formData, role })}
+                      onPress={() => {
+                        setFormData({ ...formData, role });
+                        // If Super Admin is selected, clear storeId
+                        if (role === Roles.SUPER_ADMIN) {
+                          setFormData(prev => ({ ...prev, role, storeId: "" }));
+                          setIsSuperAdmin(true);
+                        } else {
+                          setIsSuperAdmin(false);
+                        }
+                      }}
                     >
                       <Text
                         style={[
@@ -1189,11 +1279,19 @@ export default function StaffManagement() {
                   ))}
                 </View>
               </View>
+
               <View style={styles.formField}>
                 <Text style={styles.formLabel}>
-                  Store {stores.length > 1 ? "*" : ""}
+                  {formData.role === Roles.SUPER_ADMIN ? "Store Access" : "Store *"}
                 </Text>
-                {stores.length === 0 ? (
+                {formData.role === Roles.SUPER_ADMIN ? (
+                  <View style={styles.allStoresContainer}>
+                    <Shield size={20} color={Colors.primary} />
+                    <Text style={styles.allStoresInfo}>
+                      Super Admin has access to <Text style={styles.allStoresHighlight}>ALL stores</Text>
+                    </Text>
+                  </View>
+                ) : stores.length === 0 ? (
                   <Text style={styles.noStoreText}>
                     No stores available. Please create a store first.
                   </Text>
@@ -1229,6 +1327,7 @@ export default function StaffManagement() {
                   </View>
                 )}
               </View>
+
               <View style={styles.formButtons}>
                 <TouchableOpacity
                   style={[styles.formButton, styles.cancelButton]}
@@ -1269,8 +1368,6 @@ export default function StaffManagement() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.gray50 },
   loadingContainer: { flex: 1, justifyContent: "center", alignItems: "center" },
-
-  // Header
   header: {
     backgroundColor: Colors.white,
     padding: Spacing.md,
@@ -1298,12 +1395,8 @@ const styles = StyleSheet.create({
     padding: Spacing.md,
     borderRadius: BorderRadius.lg,
   },
-
-  // List
   list: { flex: 1 },
   listContent: { padding: Spacing.md },
-
-  // Staff Item - Updated for TouchableOpacity
   staffItem: {
     backgroundColor: Colors.white,
     borderRadius: BorderRadius.lg,
@@ -1347,8 +1440,6 @@ const styles = StyleSheet.create({
     marginLeft: 4,
   },
   staffItemRight: { alignItems: "flex-end" },
-
-  // Role Badges
   roleBadge: {
     paddingHorizontal: Spacing.sm,
     paddingVertical: 2,
@@ -1373,8 +1464,6 @@ const styles = StyleSheet.create({
   roleWarehouseStaffText: { color: "#92400E" },
   roleDefault: { backgroundColor: Colors.gray200 },
   roleDefaultText: { color: Colors.gray700 },
-
-  // Status Badges
   statusBadge: {
     paddingHorizontal: Spacing.sm,
     paddingVertical: 2,
@@ -1386,8 +1475,6 @@ const styles = StyleSheet.create({
   statusInactive: { backgroundColor: Colors.error + "20" },
   statusInactiveText: { color: Colors.error },
   statusText: { fontSize: Typography.xs, fontWeight: "500" },
-
-  // Footer
   staffItemFooter: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -1400,12 +1487,18 @@ const styles = StyleSheet.create({
   staffItemStore: { fontSize: Typography.xs, color: Colors.gray500 },
   staffItemActions: { flexDirection: "row", alignItems: "center" },
   actionButton: { padding: Spacing.sm },
-
-  // Empty State
+  allStoresBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+  },
+  allStoresText: {
+    fontSize: Typography.xs,
+    color: Colors.primary,
+    fontWeight: "500",
+  },
   emptyContainer: { paddingVertical: Spacing["4xl"], alignItems: "center" },
   emptyText: { color: Colors.gray500 },
-
-  // Modal (unchanged)
   modalOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.5)" },
   modalContent: {
     flex: 1,
@@ -1475,6 +1568,23 @@ const styles = StyleSheet.create({
     fontSize: Typography.sm,
     color: Colors.primary,
     fontWeight: "500",
+  },
+  allStoresContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: Colors.primary + "10",
+    padding: Spacing.md,
+    borderRadius: BorderRadius.lg,
+    gap: Spacing.sm,
+  },
+  allStoresInfo: {
+    fontSize: Typography.sm,
+    color: Colors.gray700,
+    flex: 1,
+  },
+  allStoresHighlight: {
+    color: Colors.primary,
+    fontWeight: "600",
   },
   formButtons: { flexDirection: "row", gap: Spacing.sm, marginTop: Spacing.md },
   formButton: {

@@ -3,7 +3,9 @@ import axios from "axios";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Platform } from "react-native";
 
-const API_URL = "http://10.212.99.73:5000/api";
+const API_URL = 
+"http://10.247.41.73:5000/api";
+// "https://store-management-server-j1us.onrender.com/api";
 // process.env.EXPO_PUBLIC_API_URL || 
 
 const api = axios.create({

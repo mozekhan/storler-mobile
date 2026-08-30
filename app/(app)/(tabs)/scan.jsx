@@ -1,17 +1,16 @@
-// // screens/scan.jsx - Delegates all validation to backend
-// import React, { useState, useEffect } from "react";
+// import React, { useState, useRef, useCallback } from "react";
 // import {
 //   View,
 //   Text,
 //   TouchableOpacity,
-//   Alert,
 //   ActivityIndicator,
 //   StyleSheet,
 //   Dimensions,
+//   Modal,
 // } from "react-native";
 // import { SafeAreaView } from "react-native-safe-area-context";
 // import { CameraView, useCameraPermissions } from "expo-camera";
-// import { useRouter } from "expo-router";
+// import { useRouter, useFocusEffect } from "expo-router";
 // import { X, QrCode, CheckCircle, XCircle } from "lucide-react-native";
 // import TransactionService from "../../../services/transactionService";
 // import {
@@ -19,133 +18,300 @@
 //   Spacing,
 //   Typography,
 //   BorderRadius,
+//   Shadows,
 // } from "../../../constants/theme";
 
 // const { width } = Dimensions.get("window");
 
+// // How long we wait after a modal is dismissed before we start listening for
+// // barcodes again. The printed QR / receipt is almost always still sitting in
+// // the camera's frame right when a modal closes - re-arming instantly let the
+// // very next camera frame re-scan the same code and re-run the whole flow.
+// const RESCAN_COOLDOWN_MS = 1500;
+
+// // Maps a validated QR's type + nextAction to where we send the user next.
+// // These three cases never show a modal - they navigate straight through.
+// const AUTO_ADVANCE = {
+//   SALES: {
+//     nextAction: "PROCEED_TO_PAYMENT",
+//     pathname: "/(app)/(tabs)/finance",
+//     mode: "pay",
+//   },
+//   PAYMENT: {
+//     nextAction: "PROCEED_TO_WAREHOUSE",
+//     pathname: "/(app)/(tabs)/warehouse",
+//     mode: "release",
+//   },
+//   RELEASE: {
+//     nextAction: "PROCEED_TO_INVOICE",
+//     pathname: "/(app)/(modals)/receipt-preview",
+//     mode: "invoice",
+//   },
+// };
+
+// function ScanResultModal({ visible, type, title, message, primaryLabel, onPrimary, onDismiss }) {
+//   const isSuccess = type === "success";
+//   return (
+//     <Modal visible={visible} transparent animationType="fade" onRequestClose={onDismiss}>
+//       <View style={styles.alertOverlay}>
+//         <View style={styles.alertContainer}>
+//           <View style={styles.alertHeader}>
+//             <Text style={styles.alertTitle}>{title}</Text>
+//             <TouchableOpacity onPress={onDismiss} style={styles.alertCloseButton}>
+//               <XCircle size={20} color={Colors.gray400} />
+//             </TouchableOpacity>
+//           </View>
+
+//           <View style={styles.alertBody}>
+//             {isSuccess ? (
+//               <CheckCircle size={40} color={Colors.success} style={styles.alertIcon} />
+//             ) : (
+//               <XCircle size={40} color={Colors.error} style={styles.alertIcon} />
+//             )}
+//             <Text style={styles.alertMessage}>{message}</Text>
+//           </View>
+
+//           <View style={styles.alertFooter}>
+//             <TouchableOpacity
+//               style={[styles.alertButton, styles.alertCancelButton]}
+//               onPress={onDismiss}
+//             >
+//               <Text style={styles.alertCancelText}>
+//                 {primaryLabel ? "Scan Again" : "OK"}
+//               </Text>
+//             </TouchableOpacity>
+//             {primaryLabel && (
+//               <TouchableOpacity
+//                 style={[styles.alertButton, styles.alertPrimaryButton, styles.alertButtonMargin]}
+//                 onPress={onPrimary}
+//               >
+//                 <Text style={styles.alertPrimaryText}>{primaryLabel}</Text>
+//               </TouchableOpacity>
+//             )}
+//           </View>
+//         </View>
+//       </View>
+//     </Modal>
+//   );
+// }
+
 // export default function Scan() {
 //   const [permission, requestPermission] = useCameraPermissions();
-//   const [scanning, setScanning] = useState(true);
-//   const [loading, setLoading] = useState(false);
-//   const [lastScanned, setLastScanned] = useState(null);
 //   const router = useRouter();
 
-//   useEffect(() => {
-//     if (!permission?.granted) {
-//       requestPermission();
-//     }
-//   }, []);
+//   const [locked, setLocked] = useState(false);
+//   const [loading, setLoading] = useState(false);
+//   const [isFocused, setIsFocused] = useState(true);
+//   const [cameraKey, setCameraKey] = useState(0);
+//   const [resultModal, setResultModal] = useState({
+//     visible: false,
+//     type: "error",
+//     title: "",
+//     message: "",
+//     primaryLabel: null,
+//     onPrimary: null,
+//   });
 
-//   const handleBarCodeScanned = async ({ data }) => {
-//     if (!scanning || loading) return;
-//     setScanning(false);
-//     setLoading(true);
+//   // Refs back up the state above so the guard inside handleBarCodeScanned is
+//   // synchronous and can't be bypassed by a camera callback that fires before
+//   // a React state update has actually flushed to the native view.
+//   const lockedRef = useRef(false);
+//   const lastDataRef = useRef(null);
+//   const navigatingRef = useRef(false);
+//   const cooldownTimeoutRef = useRef(null);
 
-//     try {
-//       // Delegate validation entirely to backend
-//       const result = await TransactionService.validateQR(data);
+//   const setLock = (value) => {
+//     lockedRef.current = value;
+//     setLocked(value);
+//   };
 
-//       if (result && result.isValid) {
-//         const { transaction, qrType, nextAction, receiptData } = result;
-
-//         setLastScanned({
-//           transactionId: transaction._id,
-//           transactionNumber: transaction.transactionNumber,
-//           qrType,
-//           nextAction,
-//           success: true,
-//         });
-
-//         // Navigate based on QR type and next action
-//         if (qrType === "SALES" && nextAction === "PROCEED_TO_PAYMENT") {
-//           router.push({
-//             pathname: "/(app)/(modals)/payment-modal",
-//             params: { 
-//               transactionId: transaction._id,
-//               transactionNumber: transaction.transactionNumber,
-//               totalAmount: transaction.totalAmount,
-//               itemCount: transaction.items?.length || 0
-//             },
-//           });
-//         } else if (qrType === "PAYMENT" && nextAction === "PROCEED_TO_WAREHOUSE") {
-//           router.push({
-//             pathname: "/(app)/(tabs)/warehouse",
-//             params: { 
-//               transactionId: transaction._id,
-//               transactionNumber: transaction.transactionNumber,
-//               invoiceNumber: transaction.finalInvoiceNumber
-//             },
-//           });
-//         } else if (qrType === "RELEASE" && nextAction === "VIEW_INVOICE") {
-//           router.push({
-//             pathname: "/(app)/(modals)/transaction-detail",
-//             params: { 
-//               id: transaction._id,
-//               invoiceNumber: transaction.finalInvoiceNumber,
-//               showInvoice: "true"
-//             },
-//           });
-//         } else if (qrType === "INVOICE" && nextAction === "COMPLETE_TRANSACTION") {
-//           router.push({
-//             pathname: "/(app)/(modals)/transaction-detail",
-//             params: { 
-//               id: transaction._id,
-//               transactionNumber: transaction.transactionNumber,
-//               showReceipt: "true"
-//             },
-//           });
-//         } else {
-//           // Generic success - show transaction details
-//           Alert.alert(
-//             "QR Validated",
-//             `Transaction: ${transaction.transactionNumber}\n` +
-//             `Status: ${transaction.status}\n` +
-//             `Total: $${transaction.totalAmount?.toFixed(2)}\n` +
-//             `Items: ${transaction.items?.length || 0}`,
-//             [
-//               {
-//                 text: "View Details",
-//                 onPress: () =>
-//                   router.push({
-//                     pathname: "/(app)/(modals)/transaction-detail",
-//                     params: { id: transaction._id },
-//                   }),
-//               },
-//               {
-//                 text: "Scan Again",
-//                 onPress: () => {
-//                   setScanning(true);
-//                   setLastScanned(null);
-//                 },
-//               },
-//             ]
-//           );
-//         }
-//       } else {
-//         Alert.alert(
-//           "Invalid QR Code",
-//           result?.error || "This QR code is not valid or expired"
-//         );
-//         setScanning(true);
-//       }
-//     } catch (error) {
-//       console.error("QR Scan Error:", error);
-//       let errorMessage = "Failed to scan QR code";
-//       if (error.response?.data?.message) {
-//         errorMessage = error.response.data.message;
-//       } else if (error.message) {
-//         errorMessage = error.message;
-//       }
-//       Alert.alert("Error", errorMessage);
-//       setScanning(true);
-//     } finally {
-//       setLoading(false);
+//   const clearCooldown = () => {
+//     if (cooldownTimeoutRef.current) {
+//       clearTimeout(cooldownTimeoutRef.current);
+//       cooldownTimeoutRef.current = null;
 //     }
 //   };
 
-//   const resetScanner = () => {
-//     setScanning(true);
-//     setLastScanned(null);
+//   // Runs on every screen focus (including first mount). Remounting the
+//   // CameraView via `cameraKey` guarantees no stale native scan buffer
+//   // carries over from a previous visit to this screen.
+//   useFocusEffect(
+//     useCallback(() => {
+//       setIsFocused(true);
+//       setCameraKey((key) => key + 1);
+//       setLoading(false);
+//       setResultModal((prev) => (prev.visible ? { ...prev, visible: false } : prev));
+//       clearCooldown();
+//       lastDataRef.current = null;
+//       navigatingRef.current = false;
+//       setLock(false);
+
+//       if (!permission?.granted) {
+//         requestPermission();
+//       }
+
+//       return () => {
+//         setIsFocused(false);
+//         clearCooldown();
+//       };
+//       // eslint-disable-next-line react-hooks/exhaustive-deps
+//     }, []),
+//   );
+
+//   const rearmScanner = (delayMs = RESCAN_COOLDOWN_MS) => {
+//     clearCooldown();
+//     cooldownTimeoutRef.current = setTimeout(() => {
+//       lastDataRef.current = null;
+//       setLock(false);
+//       cooldownTimeoutRef.current = null;
+//     }, delayMs);
+//   };
+
+//   const showResult = ({ type, title, message, primaryLabel = null, onPrimary = null }) => {
+//     setLoading(false);
+//     setResultModal({ visible: true, type, title, message, primaryLabel, onPrimary });
+//   };
+
+//   const dismissModal = () => {
+//     setResultModal((prev) => ({ ...prev, visible: false }));
+//     rearmScanner();
+//   };
+
+//   const runPrimaryAction = () => {
+//     const action = resultModal.onPrimary;
+//     setResultModal((prev) => ({ ...prev, visible: false }));
+//     // Navigating away - do NOT rearm here. useFocusEffect resets everything
+//     // cleanly if/when the user returns to this screen.
+//     if (action) action();
+//   };
+
+//   const navigateAway = (pathname, params) => {
+//     setLoading(false);
+//     navigatingRef.current = true;
+//     router.push({ pathname, params });
+//   };
+
+//   const describeApiError = (error) => {
+//     if (error?.response?.status === 500) {
+//       return { title: "Server Error", message: "The server encountered an error. Please try again." };
+//     }
+//     if (error?.response?.data?.message) {
+//       return { title: "Error", message: error.response.data.message };
+//     }
+//     if (error?.message) {
+//       return { title: "Error", message: error.message };
+//     }
+//     return { title: "Error", message: "Failed to scan QR code" };
+//   };
+
+//   const processScan = async (data) => {
+//     setLoading(true);
+
+//     if (data && data.startsWith("data:image/")) {
+//       showResult({
+//         type: "error",
+//         title: "Invalid QR Code Format",
+//         message:
+//           "This QR code appears to be an image rather than a scannable code.\n\nThe receipt was likely printed with the wrong QR data format.\nPlease reprint the receipt with the correct QR code format.",
+//       });
+//       return;
+//     }
+
+//     try {
+//       JSON.parse(data);
+//     } catch {
+//       showResult({
+//         type: "error",
+//         title: "Invalid QR Code",
+//         message: "The scanned QR code does not contain valid data.\nPlease ensure you're scanning a valid receipt QR code.",
+//       });
+//       return;
+//     }
+
+//     let result;
+//     try {
+//       result = await TransactionService.validateQR(data);
+//     } catch (apiError) {
+//       console.error("API Error during QR validation:", apiError);
+//       showResult({ type: "error", ...describeApiError(apiError) });
+//       return;
+//     }
+
+//     if (!result || !result.isValid) {
+//       showResult({
+//         type: "error",
+//         title: "Invalid QR Code",
+//         message: result?.error || "This QR code is not valid or expired.",
+//       });
+//       return;
+//     }
+
+//     const { transaction, qrType, nextAction, status } = result;
+
+//     if (!transaction || !transaction._id) {
+//       console.error("Transaction missing required fields:", transaction);
+//       showResult({
+//         type: "error",
+//         title: "Invalid Transaction Data",
+//         message: "The QR code validation returned incomplete transaction data.\n\nPlease try scanning again or contact support.",
+//       });
+//       return;
+//     }
+
+//     const auto = AUTO_ADVANCE[qrType];
+//     if (auto && nextAction === auto.nextAction) {
+//       navigateAway(auto.pathname, {
+//         transactionId: transaction._id,
+//         transactionNumber: transaction.transactionNumber,
+//         totalAmount: transaction.totalAmount || 0,
+//         itemCount: transaction.items?.length || 0,
+//         invoiceNumber: transaction.finalInvoiceNumber || "",
+//         qrData: data,
+//         mode: auto.mode,
+//       });
+//       return;
+//     }
+
+//     if (qrType === "INVOICE" && nextAction === "COMPLETE_TRANSACTION") {
+//       showResult({
+//         type: "success",
+//         title: "Transaction Complete!",
+//         message: `Transaction ${transaction.transactionNumber || "Unknown"} has been completed successfully.`,
+//         primaryLabel: "View Receipt",
+//         // onPrimary: () =>
+//         //   navigateAway("/(app)/(modals)/receipt-preview", {
+//         //     transactionId: transaction._id,
+//         //     mode: "final",
+//         //   }),
+//         onPrimary: () =>
+//     navigateAway("/(app)/(modals)/receipt-preview", {
+//     transactionId: transaction._id,
+//     qrType: "FINAL",
+//     mode: "final",
+//     transactionNumber: transaction.transactionNumber || "",
+//     invoiceNumber: transaction.finalInvoiceNumber || "",
+//         }),
+//       });
+//       return;
+//     }
+
+//     showResult({
+//       type: "success",
+//       title: `${qrType || "QR"} Scanned`,
+//       message: `Transaction: ${transaction.transactionNumber || "Unknown"}\nStatus: ${status || "Unknown"}\nTotal: $${(transaction.totalAmount || 0).toFixed(2)}`,
+//       primaryLabel: "View Details",
+//       onPrimary: () =>
+//         navigateAway("/(app)/(modals)/transaction-detail", { id: transaction._id }),
+//     });
+//   };
+
+//   const handleBarCodeScanned = ({ data }) => {
+//     if (lockedRef.current || navigatingRef.current) return;
+//     if (!data || data === lastDataRef.current) return;
+
+//     lastDataRef.current = data;
+//     setLock(true);
+//     processScan(data);
 //   };
 
 //   if (!permission?.granted) {
@@ -157,10 +323,7 @@
 //           <Text style={styles.permissionText}>
 //             Camera permission is required to scan QR codes for transactions
 //           </Text>
-//           <TouchableOpacity
-//             style={styles.permissionButton}
-//             onPress={requestPermission}
-//           >
+//           <TouchableOpacity style={styles.permissionButton} onPress={requestPermission}>
 //             <Text style={styles.permissionButtonText}>Grant Permission</Text>
 //           </TouchableOpacity>
 //         </View>
@@ -168,72 +331,62 @@
 //     );
 //   }
 
+//   const cameraActive = isFocused && !locked;
+
 //   return (
 //     <SafeAreaView style={styles.container}>
 //       <View style={styles.cameraContainer}>
-//         <CameraView
-//           style={styles.camera}
-//           onBarcodeScanned={handleBarCodeScanned}
-//           barcodeScannerSettings={{ barcodeTypes: ["qr"] }}
-//         >
-//           <View style={styles.cameraOverlay}>
-//             <TouchableOpacity
-//               style={styles.closeButton}
-//               onPress={() => router.back()}
-//             >
-//               <X color={Colors.white} size={24} />
-//             </TouchableOpacity>
+//         {isFocused && (
+//           // IMPORTANT: CameraView renders NO children. As of Expo SDK 53+
+//           // (new architecture), nesting any content inside <CameraView> is
+//           // unsupported and logs "The <CameraView> component does not
+//           // support children. This may lead to inconsistent behaviour or
+//           // crashes." (see github.com/expo/expo/issues/37150). All overlay
+//           // UI below is a separate, absolutely-positioned sibling instead.
+//           <CameraView
+//             key={cameraKey}
+//             style={StyleSheet.absoluteFillObject}
+//             facing="back"
+//             active={cameraActive}
+//             onBarcodeScanned={locked ? undefined : handleBarCodeScanned}
+//             barcodeScannerSettings={{ barcodeTypes: ["qr"] }}
+//           />
+//         )}
 
-//             <View style={styles.scanArea}>
-//               <View style={styles.scanFrame}>
-//                 <View style={[styles.corner, styles.cornerTL]} />
-//                 <View style={[styles.corner, styles.cornerTR]} />
-//                 <View style={[styles.corner, styles.cornerBL]} />
-//                 <View style={[styles.corner, styles.cornerBR]} />
-//               </View>
-//               <Text style={styles.scanText}>Position QR code in the frame</Text>
+//         {/* Overlay UI - a sibling of CameraView, not a child of it */}
+//         <View style={styles.cameraOverlay} pointerEvents="box-none">
+//           <TouchableOpacity style={styles.closeButton} onPress={() => router.back()}>
+//             <X color={Colors.white} size={24} />
+//           </TouchableOpacity>
+
+//           <View style={styles.scanArea} pointerEvents="none">
+//             <View style={styles.scanFrame}>
+//               <View style={[styles.corner, styles.cornerTL]} />
+//               <View style={[styles.corner, styles.cornerTR]} />
+//               <View style={[styles.corner, styles.cornerBL]} />
+//               <View style={[styles.corner, styles.cornerBR]} />
 //             </View>
-
-//             {loading && (
-//               <View style={styles.loadingOverlay}>
-//                 <ActivityIndicator color={Colors.white} size="large" />
-//                 <Text style={styles.loadingText}>Validating QR Code...</Text>
-//               </View>
-//             )}
-
-//             {lastScanned && !loading && (
-//               <View style={styles.resultOverlay}>
-//                 <View style={styles.resultContent}>
-//                   {lastScanned.success ? (
-//                     <CheckCircle size={48} color={Colors.success} />
-//                   ) : (
-//                     <XCircle size={48} color={Colors.error} />
-//                   )}
-//                   <Text style={styles.resultTitle}>
-//                     {lastScanned.success ? "QR Validated!" : "Invalid QR Code"}
-//                   </Text>
-//                   <Text style={styles.resultSubtitle}>
-//                     {lastScanned.success
-//                       ? `${lastScanned.transactionNumber || lastScanned.transactionId?.slice(-8)}`
-//                       : "Please try again"}
-//                   </Text>
-//                   {lastScanned.nextAction && (
-//                     <Text style={styles.resultNextAction}>
-//                       Next: {lastScanned.nextAction.replace("_", " ")}
-//                     </Text>
-//                   )}
-//                   <TouchableOpacity
-//                     style={styles.resultButton}
-//                     onPress={resetScanner}
-//                   >
-//                     <Text style={styles.resultButtonText}>Scan Again</Text>
-//                   </TouchableOpacity>
-//                 </View>
-//               </View>
-//             )}
+//             <Text style={styles.scanText}>Position QR code in the frame</Text>
 //           </View>
-//         </CameraView>
+
+//           {loading && (
+//             <View style={styles.loadingOverlay} pointerEvents="none">
+//               <ActivityIndicator color={Colors.white} size="large" />
+//               <Text style={styles.loadingText}>Validating QR Code...</Text>
+//             </View>
+//           )}
+//         </View>
 //       </View>
+
+//       <ScanResultModal
+//         visible={resultModal.visible}
+//         type={resultModal.type}
+//         title={resultModal.title}
+//         message={resultModal.message}
+//         primaryLabel={resultModal.primaryLabel}
+//         onPrimary={runPrimaryAction}
+//         onDismiss={dismissModal}
+//       />
 //     </SafeAreaView>
 //   );
 // }
@@ -275,9 +428,11 @@
 //     fontWeight: "600",
 //     fontSize: Typography.md,
 //   },
-//   cameraContainer: { flex: 1 },
-//   camera: { flex: 1 },
-//   cameraOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.3)" },
+//   cameraContainer: { flex: 1, position: "relative" },
+//   cameraOverlay: {
+//     ...StyleSheet.absoluteFillObject,
+//     backgroundColor: "rgba(0,0,0,0.3)",
+//   },
 //   closeButton: {
 //     position: "absolute",
 //     top: Spacing.md,
@@ -303,34 +458,10 @@
 //     borderColor: Colors.primary,
 //     borderWidth: 3,
 //   },
-//   cornerTL: {
-//     top: -2,
-//     left: -2,
-//     borderBottomWidth: 0,
-//     borderRightWidth: 0,
-//     borderRadius: 2,
-//   },
-//   cornerTR: {
-//     top: -2,
-//     right: -2,
-//     borderBottomWidth: 0,
-//     borderLeftWidth: 0,
-//     borderRadius: 2,
-//   },
-//   cornerBL: {
-//     bottom: -2,
-//     left: -2,
-//     borderTopWidth: 0,
-//     borderRightWidth: 0,
-//     borderRadius: 2,
-//   },
-//   cornerBR: {
-//     bottom: -2,
-//     right: -2,
-//     borderTopWidth: 0,
-//     borderLeftWidth: 0,
-//     borderRadius: 2,
-//   },
+//   cornerTL: { top: -2, left: -2, borderBottomWidth: 0, borderRightWidth: 0, borderRadius: 2 },
+//   cornerTR: { top: -2, right: -2, borderBottomWidth: 0, borderLeftWidth: 0, borderRadius: 2 },
+//   cornerBL: { bottom: -2, left: -2, borderTopWidth: 0, borderRightWidth: 0, borderRadius: 2 },
+//   cornerBR: { bottom: -2, right: -2, borderTopWidth: 0, borderLeftWidth: 0, borderRadius: 2 },
 //   scanText: {
 //     color: Colors.white,
 //     textAlign: "center",
@@ -350,42 +481,77 @@
 //     marginTop: Spacing.sm,
 //     fontSize: Typography.sm,
 //   },
-//   resultOverlay: {
-//     position: "absolute",
-//     bottom: Spacing["4xl"],
-//     left: Spacing["2xl"],
-//     right: Spacing["2xl"],
-//     backgroundColor: "rgba(0,0,0,0.8)",
-//     borderRadius: BorderRadius["2xl"],
-//     padding: Spacing["2xl"],
+
+//   // Result modal
+//   alertOverlay: {
+//     flex: 1,
+//     backgroundColor: "rgba(0,0,0,0.5)",
+//     justifyContent: "center",
 //     alignItems: "center",
+//     padding: Spacing["2xl"],
 //   },
-//   resultContent: { alignItems: "center" },
-//   resultTitle: {
-//     color: Colors.white,
+//   alertContainer: {
+//     backgroundColor: Colors.white,
+//     borderRadius: BorderRadius["2xl"],
+//     width: "100%",
+//     maxWidth: 380,
+//     ...Shadows.lg,
+//     overflow: "hidden",
+//   },
+//   alertHeader: {
+//     flexDirection: "row",
+//     justifyContent: "space-between",
+//     alignItems: "center",
+//     padding: Spacing.lg,
+//     borderBottomWidth: 1,
+//     borderBottomColor: Colors.gray100,
+//   },
+//   alertTitle: {
 //     fontSize: Typography.lg,
 //     fontWeight: "bold",
-//     marginTop: Spacing.sm,
+//     color: Colors.gray900,
+//     flex: 1,
 //   },
-//   resultSubtitle: {
-//     color: Colors.gray300,
-//     fontSize: Typography.sm,
-//     marginTop: Spacing.xs,
+//   alertCloseButton: { padding: Spacing.xs },
+//   alertBody: {
+//     padding: Spacing.lg,
+//     paddingVertical: Spacing["2xl"],
+//     alignItems: "center",
 //   },
-//   resultNextAction: {
-//     color: Colors.primary,
-//     fontSize: Typography.sm,
-//     marginTop: Spacing.xs,
-//     fontWeight: "500",
+//   alertIcon: { marginBottom: Spacing.sm },
+//   alertMessage: {
+//     fontSize: Typography.md,
+//     color: Colors.gray700,
+//     lineHeight: 24,
+//     textAlign: "center",
 //   },
-//   resultButton: {
-//     marginTop: Spacing.md,
-//     backgroundColor: Colors.primary,
-//     paddingHorizontal: Spacing["2xl"],
+//   alertFooter: {
+//     flexDirection: "row",
+//     padding: Spacing.md,
+//     borderTopWidth: 1,
+//     borderTopColor: Colors.gray100,
+//     justifyContent: "flex-end",
+//   },
+//   alertButton: {
 //     paddingVertical: Spacing.sm,
+//     paddingHorizontal: Spacing["2xl"],
 //     borderRadius: BorderRadius.lg,
+//     minWidth: 80,
+//     alignItems: "center",
 //   },
-//   resultButtonText: { color: Colors.white, fontWeight: "600" },
+//   alertButtonMargin: { marginLeft: Spacing.sm },
+//   alertPrimaryButton: { backgroundColor: Colors.primary },
+//   alertCancelButton: { backgroundColor: Colors.gray200 },
+//   alertPrimaryText: {
+//     color: Colors.white,
+//     fontWeight: "600",
+//     fontSize: Typography.sm,
+//   },
+//   alertCancelText: {
+//     color: Colors.gray700,
+//     fontWeight: "600",
+//     fontSize: Typography.sm,
+//   },
 // });
 
 
@@ -416,19 +582,25 @@
 
 
 
-import React, { useState, useEffect } from "react";
+
+
+
+
+
+
+import React, { useState, useRef, useCallback } from "react";
 import {
   View,
   Text,
   TouchableOpacity,
-  Alert,
   ActivityIndicator,
   StyleSheet,
   Dimensions,
+  Modal,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { CameraView, useCameraPermissions } from "expo-camera";
-import { useRouter } from "expo-router";
+import { useRouter, useFocusEffect } from "expo-router";
 import { X, QrCode, CheckCircle, XCircle } from "lucide-react-native";
 import TransactionService from "../../../services/transactionService";
 import {
@@ -436,230 +608,309 @@ import {
   Spacing,
   Typography,
   BorderRadius,
+  Shadows,
 } from "../../../constants/theme";
 
 const { width } = Dimensions.get("window");
 
+// How long we wait after a modal is dismissed before we start listening for
+// barcodes again. The printed QR / receipt is almost always still sitting in
+// the camera's frame right when a modal closes - re-arming instantly let the
+// very next camera frame re-scan the same code and re-run the whole flow.
+const RESCAN_COOLDOWN_MS = 1500;
+
+// Maps a validated QR's type + nextAction to where we send the user next.
+// These three cases never show a modal - they navigate straight through.
+const AUTO_ADVANCE = {
+  SALES: {
+    nextAction: "PROCEED_TO_PAYMENT",
+    pathname: "/(app)/(tabs)/finance",
+    mode: "pay",
+  },
+  PAYMENT: {
+    nextAction: "PROCEED_TO_WAREHOUSE",
+    pathname: "/(app)/(tabs)/warehouse",
+    mode: "release",
+  },
+  RELEASE: {
+    nextAction: "PROCEED_TO_INVOICE",
+    pathname: "/(app)/(modals)/receipt-preview",
+    mode: "invoice",
+  },
+};
+
+function ScanResultModal({ visible, type, title, message, primaryLabel, onPrimary, onDismiss }) {
+  const isSuccess = type === "success";
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onDismiss}>
+      <View style={styles.alertOverlay}>
+        <View style={styles.alertContainer}>
+          <View style={styles.alertHeader}>
+            <Text style={styles.alertTitle}>{title}</Text>
+            <TouchableOpacity onPress={onDismiss} style={styles.alertCloseButton}>
+              <XCircle size={20} color={Colors.gray400} />
+            </TouchableOpacity>
+          </View>
+
+          <View style={styles.alertBody}>
+            {isSuccess ? (
+              <CheckCircle size={40} color={Colors.success} style={styles.alertIcon} />
+            ) : (
+              <XCircle size={40} color={Colors.error} style={styles.alertIcon} />
+            )}
+            <Text style={styles.alertMessage}>{message}</Text>
+          </View>
+
+          <View style={styles.alertFooter}>
+            <TouchableOpacity
+              style={[styles.alertButton, styles.alertCancelButton]}
+              onPress={onDismiss}
+            >
+              <Text style={styles.alertCancelText}>
+                {primaryLabel ? "Scan Again" : "OK"}
+              </Text>
+            </TouchableOpacity>
+            {primaryLabel && (
+              <TouchableOpacity
+                style={[styles.alertButton, styles.alertPrimaryButton, styles.alertButtonMargin]}
+                onPress={onPrimary}
+              >
+                <Text style={styles.alertPrimaryText}>{primaryLabel}</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
 export default function Scan() {
   const [permission, requestPermission] = useCameraPermissions();
-  const [scanning, setScanning] = useState(true);
-  const [loading, setLoading] = useState(false);
-  const [lastScanned, setLastScanned] = useState(null);
   const router = useRouter();
 
-  useEffect(() => {
-    if (!permission?.granted) {
-      requestPermission();
-    }
-  }, []);
+  const [locked, setLocked] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [isFocused, setIsFocused] = useState(true);
+  const [cameraKey, setCameraKey] = useState(0);
+  const [resultModal, setResultModal] = useState({
+    visible: false,
+    type: "error",
+    title: "",
+    message: "",
+    primaryLabel: null,
+    onPrimary: null,
+  });
 
-  const handleBarCodeScanned = async ({ data }) => {
-    if (!scanning || loading) return;
-    setScanning(false);
-    setLoading(true);
+  // Refs back up the state above so the guard inside handleBarCodeScanned is
+  // synchronous and can't be bypassed by a camera callback that fires before
+  // a React state update has actually flushed to the native view.
+  const lockedRef = useRef(false);
+  const lastDataRef = useRef(null);
+  const navigatingRef = useRef(false);
+  const cooldownTimeoutRef = useRef(null);
 
-    try {
-      // First, validate the QR to determine its type
-      const result = await TransactionService.validateQR(data);
+  const setLock = (value) => {
+    lockedRef.current = value;
+    setLocked(value);
+  };
 
-      if (!result.isValid) {
-        Alert.alert("Invalid QR Code", result.error || "This QR code is not valid or expired");
-        setScanning(true);
-        setLoading(false);
-        return;
-      }
-
-      const { transaction, qrType, nextAction, status } = result;
-
-      setLastScanned({
-        transactionId: transaction._id,
-        transactionNumber: transaction.transactionNumber,
-        qrType,
-        nextAction,
-        success: true,
-        status,
-      });
-
-      // Route based on QR type and next action
-      switch (qrType) {
-        case "SALES":
-          if (nextAction === "PROCEED_TO_PAYMENT") {
-            // Navigate to Payment Screen with transaction details
-            router.push({
-              pathname: "/(app)/(tabs)/finance",
-              params: {
-                transactionId: transaction._id,
-                transactionNumber: transaction.transactionNumber,
-                totalAmount: transaction.totalAmount,
-                itemCount: transaction.items?.length || 0,
-                qrData: data,
-                mode: "pay",
-              },
-            });
-          } else {
-            Alert.alert(
-              "Sales QR Scanned",
-              `Transaction: ${transaction.transactionNumber}\nStatus: ${status}\nTotal: $${transaction.totalAmount?.toFixed(2)}`,
-              [
-                {
-                  text: "View Details",
-                  onPress: () => router.push({
-                    pathname: "/(app)/(modals)/transaction-detail",
-                    params: { id: transaction._id },
-                  }),
-                },
-                {
-                  text: "Scan Again",
-                  onPress: () => { setScanning(true); setLastScanned(null); },
-                },
-              ]
-            );
-          }
-          break;
-
-        case "PAYMENT":
-          if (nextAction === "PROCEED_TO_WAREHOUSE") {
-            // Navigate to Warehouse Screen
-            router.push({
-              pathname: "/(app)/(tabs)/warehouse",
-              params: {
-                transactionId: transaction._id,
-                transactionNumber: transaction.transactionNumber,
-                totalAmount: transaction.totalAmount,
-                qrData: data,
-                mode: "release",
-              },
-            });
-          } else {
-            Alert.alert(
-              "Payment QR Scanned",
-              `Transaction: ${transaction.transactionNumber}\nStatus: ${status}\nTotal: $${transaction.totalAmount?.toFixed(2)}`,
-              [
-                {
-                  text: "View Details",
-                  onPress: () => router.push({
-                    pathname: "/(app)/(modals)/transaction-detail",
-                    params: { id: transaction._id },
-                  }),
-                },
-                {
-                  text: "Scan Again",
-                  onPress: () => { setScanning(true); setLastScanned(null); },
-                },
-              ]
-            );
-          }
-          break;
-
-        case "RELEASE":
-          if (nextAction === "PROCEED_TO_INVOICE") {
-            // Navigate to Invoice View
-            router.push({
-              pathname: "/(app)/(modals)/receipt-preview",
-              params: {
-                transactionId: transaction._id,
-                transactionNumber: transaction.transactionNumber,
-                invoiceNumber: transaction.finalInvoiceNumber,
-                qrData: data,
-                mode: "invoice",
-              },
-            });
-          } else {
-            Alert.alert(
-              "Release QR Scanned",
-              `Transaction: ${transaction.transactionNumber}\nStatus: ${status}\nInvoice: ${transaction.finalInvoiceNumber || "N/A"}`,
-              [
-                {
-                  text: "View Details",
-                  onPress: () => router.push({
-                    pathname: "/(app)/(modals)/transaction-detail",
-                    params: { id: transaction._id },
-                  }),
-                },
-                {
-                  text: "Scan Again",
-                  onPress: () => { setScanning(true); setLastScanned(null); },
-                },
-              ]
-            );
-          }
-          break;
-
-        case "INVOICE":
-          if (nextAction === "COMPLETE_TRANSACTION") {
-            // Complete the transaction
-            Alert.alert(
-              "Transaction Complete!",
-              `Transaction ${transaction.transactionNumber} has been completed successfully.`,
-              [
-                {
-                  text: "View Receipt",
-                  onPress: () => router.push({
-                    pathname: "/(app)/(modals)/receipt-preview",
-                    params: {
-                      transactionId: transaction._id,
-                      mode: "final",
-                    },
-                  }),
-                },
-                {
-                  text: "Scan Again",
-                  onPress: () => { setScanning(true); setLastScanned(null); },
-                },
-              ]
-            );
-          } else {
-            Alert.alert(
-              "Invoice QR Scanned",
-              `Transaction: ${transaction.transactionNumber}\nStatus: ${status}`,
-              [
-                {
-                  text: "View Details",
-                  onPress: () => router.push({
-                    pathname: "/(app)/(modals)/transaction-detail",
-                    params: { id: transaction._id },
-                  }),
-                },
-                {
-                  text: "Scan Again",
-                  onPress: () => { setScanning(true); setLastScanned(null); },
-                },
-              ]
-            );
-          }
-          break;
-
-        default:
-          Alert.alert(
-            "QR Validated",
-            `Type: ${qrType}\nTransaction: ${transaction.transactionNumber}\nStatus: ${status}`,
-            [
-              {
-                text: "View Details",
-                onPress: () => router.push({
-                  pathname: "/(app)/(modals)/transaction-detail",
-                  params: { id: transaction._id },
-                }),
-              },
-              {
-                text: "Scan Again",
-                onPress: () => { setScanning(true); setLastScanned(null); },
-              },
-            ]
-          );
-      }
-    } catch (error) {
-      console.error("QR Scan Error:", error);
-      Alert.alert("Error", error.response?.data?.message || "Failed to scan QR code");
-      setScanning(true);
-    } finally {
-      setLoading(false);
+  const clearCooldown = () => {
+    if (cooldownTimeoutRef.current) {
+      clearTimeout(cooldownTimeoutRef.current);
+      cooldownTimeoutRef.current = null;
     }
   };
 
-  const resetScanner = () => {
-    setScanning(true);
-    setLastScanned(null);
+  // Runs on every screen focus (including first mount). Remounting the
+  // CameraView via `cameraKey` guarantees no stale native scan buffer
+  // carries over from a previous visit to this screen.
+  useFocusEffect(
+    useCallback(() => {
+      setIsFocused(true);
+      setCameraKey((key) => key + 1);
+      setLoading(false);
+      setResultModal((prev) => (prev.visible ? { ...prev, visible: false } : prev));
+      clearCooldown();
+      lastDataRef.current = null;
+      navigatingRef.current = false;
+      setLock(false);
+
+      if (!permission?.granted) {
+        requestPermission();
+      }
+
+      return () => {
+        setIsFocused(false);
+        clearCooldown();
+      };
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []),
+  );
+
+  const rearmScanner = (delayMs = RESCAN_COOLDOWN_MS) => {
+    clearCooldown();
+    cooldownTimeoutRef.current = setTimeout(() => {
+      lastDataRef.current = null;
+      setLock(false);
+      cooldownTimeoutRef.current = null;
+    }, delayMs);
+  };
+
+  const showResult = ({ type, title, message, primaryLabel = null, onPrimary = null }) => {
+    setLoading(false);
+    setResultModal({ visible: true, type, title, message, primaryLabel, onPrimary });
+  };
+
+  const dismissModal = () => {
+    setResultModal((prev) => ({ ...prev, visible: false }));
+    rearmScanner();
+  };
+
+  const runPrimaryAction = () => {
+    const action = resultModal.onPrimary;
+    setResultModal((prev) => ({ ...prev, visible: false }));
+    // Navigating away - do NOT rearm here. useFocusEffect resets everything
+    // cleanly if/when the user returns to this screen.
+    if (action) action();
+  };
+
+  const navigateAway = (pathname, params) => {
+    setLoading(false);
+    navigatingRef.current = true;
+    router.push({ pathname, params });
+  };
+
+  const describeApiError = (error) => {
+    if (error?.response?.status === 500) {
+      return { title: "Server Error", message: "The server encountered an error. Please try again." };
+    }
+    if (error?.response?.data?.message) {
+      return { title: "Error", message: error.response.data.message };
+    }
+    if (error?.message) {
+      return { title: "Error", message: error.message };
+    }
+    return { title: "Error", message: "Failed to scan QR code" };
+  };
+
+  const processScan = async (data) => {
+    setLoading(true);
+
+    if (data && data.startsWith("data:image/")) {
+      showResult({
+        type: "error",
+        title: "Invalid QR Code Format",
+        message:
+          "This QR code appears to be an image rather than a scannable code.\n\nThe receipt was likely printed with the wrong QR data format.\nPlease reprint the receipt with the correct QR code format.",
+      });
+      return;
+    }
+
+    try {
+      JSON.parse(data);
+    } catch {
+      showResult({
+        type: "error",
+        title: "Invalid QR Code",
+        message: "The scanned QR code does not contain valid data.\nPlease ensure you're scanning a valid receipt QR code.",
+      });
+      return;
+    }
+
+    let result;
+    try {
+      result = await TransactionService.validateQR(data);
+    } catch (apiError) {
+      console.error("API Error during QR validation:", apiError);
+      showResult({ type: "error", ...describeApiError(apiError) });
+      return;
+    }
+
+    if (!result || !result.isValid) {
+      showResult({
+        type: "error",
+        title: "Invalid QR Code",
+        message: result?.error || "This QR code is not valid or expired.",
+      });
+      return;
+    }
+
+    const { transaction, qrType, nextAction, status } = result;
+
+    if (!transaction || !transaction._id) {
+      console.error("Transaction missing required fields:", transaction);
+      showResult({
+        type: "error",
+        title: "Invalid Transaction Data",
+        message: "The QR code validation returned incomplete transaction data.\n\nPlease try scanning again or contact support.",
+      });
+      return;
+    }
+
+    const auto = AUTO_ADVANCE[qrType];
+    if (auto && nextAction === auto.nextAction) {
+      navigateAway(auto.pathname, {
+        transactionId: transaction._id,
+        transactionNumber: transaction.transactionNumber,
+        totalAmount: transaction.totalAmount || 0,
+        itemCount: transaction.items?.length || 0,
+        invoiceNumber: transaction.finalInvoiceNumber || "",
+        qrData: data,
+        mode: auto.mode,
+      });
+      return;
+    }
+
+    if (qrType === "INVOICE" && nextAction === "COMPLETE_TRANSACTION") {
+      showResult({
+        type: "success",
+        title: "Transaction Complete!",
+        message: `Transaction ${transaction.transactionNumber || "Unknown"} has been completed successfully.`,
+        primaryLabel: "View Receipt",
+        // onPrimary: () =>
+        //   navigateAway("/(app)/(modals)/receipt-preview", {
+        //     transactionId: transaction._id,
+        //     mode: "final",
+        //   }),
+        onPrimary: () =>
+    navigateAway("/(app)/(modals)/receipt-preview", {
+    transactionId: transaction._id,
+    qrType: "FINAL",
+    mode: "final",
+    transactionNumber: transaction.transactionNumber || "",
+    invoiceNumber: transaction.finalInvoiceNumber || "",
+        }),
+      });
+      return;
+    }
+
+    showResult({
+      type: "success",
+      title: `${qrType || "QR"} Scanned`,
+      message: `Transaction: ${transaction.transactionNumber || "Unknown"}\nStatus: ${status || "Unknown"}\nTotal: $${(transaction.totalAmount || 0).toFixed(2)}`,
+      primaryLabel: "View Details",
+      onPrimary: () =>
+        navigateAway("/(app)/(modals)/transaction-detail", {
+          // FIX: transaction-detail.jsx reads `params.transactionId`, but
+          // this used to send the value under the key `id` - so it always
+          // arrived as undefined no matter what was scanned, which is why
+          // every field in the mounted params log showed undefined and the
+          // screen could never leave its loading state.
+          transactionId: transaction._id,
+          transactionNumber: transaction.transactionNumber || "",
+          qrType: qrType || "",
+        }),
+    });
+  };
+
+  const handleBarCodeScanned = ({ data }) => {
+    if (lockedRef.current || navigatingRef.current) return;
+    if (!data || data === lastDataRef.current) return;
+
+    lastDataRef.current = data;
+    setLock(true);
+    processScan(data);
   };
 
   if (!permission?.granted) {
@@ -679,69 +930,62 @@ export default function Scan() {
     );
   }
 
+  const cameraActive = isFocused && !locked;
+
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.cameraContainer}>
-        <CameraView
-          style={styles.camera}
-          onBarcodeScanned={handleBarCodeScanned}
-          barcodeScannerSettings={{ barcodeTypes: ["qr"] }}
-        >
-          <View style={styles.cameraOverlay}>
-            <TouchableOpacity style={styles.closeButton} onPress={() => router.back()}>
-              <X color={Colors.white} size={24} />
-            </TouchableOpacity>
+        {isFocused && (
+          // IMPORTANT: CameraView renders NO children. As of Expo SDK 53+
+          // (new architecture), nesting any content inside <CameraView> is
+          // unsupported and logs "The <CameraView> component does not
+          // support children. This may lead to inconsistent behaviour or
+          // crashes." (see github.com/expo/expo/issues/37150). All overlay
+          // UI below is a separate, absolutely-positioned sibling instead.
+          <CameraView
+            key={cameraKey}
+            style={StyleSheet.absoluteFillObject}
+            facing="back"
+            active={cameraActive}
+            onBarcodeScanned={locked ? undefined : handleBarCodeScanned}
+            barcodeScannerSettings={{ barcodeTypes: ["qr"] }}
+          />
+        )}
 
-            <View style={styles.scanArea}>
-              <View style={styles.scanFrame}>
-                <View style={[styles.corner, styles.cornerTL]} />
-                <View style={[styles.corner, styles.cornerTR]} />
-                <View style={[styles.corner, styles.cornerBL]} />
-                <View style={[styles.corner, styles.cornerBR]} />
-              </View>
-              <Text style={styles.scanText}>Position QR code in the frame</Text>
+        {/* Overlay UI - a sibling of CameraView, not a child of it */}
+        <View style={styles.cameraOverlay} pointerEvents="box-none">
+          <TouchableOpacity style={styles.closeButton} onPress={() => router.back()}>
+            <X color={Colors.white} size={24} />
+          </TouchableOpacity>
+
+          <View style={styles.scanArea} pointerEvents="none">
+            <View style={styles.scanFrame}>
+              <View style={[styles.corner, styles.cornerTL]} />
+              <View style={[styles.corner, styles.cornerTR]} />
+              <View style={[styles.corner, styles.cornerBL]} />
+              <View style={[styles.corner, styles.cornerBR]} />
             </View>
-
-            {loading && (
-              <View style={styles.loadingOverlay}>
-                <ActivityIndicator color={Colors.white} size="large" />
-                <Text style={styles.loadingText}>Validating QR Code...</Text>
-              </View>
-            )}
-
-            {lastScanned && !loading && (
-              <View style={styles.resultOverlay}>
-                <View style={styles.resultContent}>
-                  {lastScanned.success ? (
-                    <CheckCircle size={48} color={Colors.success} />
-                  ) : (
-                    <XCircle size={48} color={Colors.error} />
-                  )}
-                  <Text style={styles.resultTitle}>
-                    {lastScanned.success ? "QR Validated!" : "Invalid QR Code"}
-                  </Text>
-                  <Text style={styles.resultSubtitle}>
-                    {lastScanned.success
-                      ? `${lastScanned.transactionNumber || lastScanned.transactionId?.slice(-8)}`
-                      : "Please try again"}
-                  </Text>
-                  {lastScanned.nextAction && (
-                    <Text style={styles.resultNextAction}>
-                      Next: {lastScanned.nextAction.replace("_", " ")}
-                    </Text>
-                  )}
-                  <Text style={styles.resultStatus}>
-                    Status: {lastScanned.status || "Unknown"}
-                  </Text>
-                  <TouchableOpacity style={styles.resultButton} onPress={resetScanner}>
-                    <Text style={styles.resultButtonText}>Scan Again</Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-            )}
+            <Text style={styles.scanText}>Position QR code in the frame</Text>
           </View>
-        </CameraView>
+
+          {loading && (
+            <View style={styles.loadingOverlay} pointerEvents="none">
+              <ActivityIndicator color={Colors.white} size="large" />
+              <Text style={styles.loadingText}>Validating QR Code...</Text>
+            </View>
+          )}
+        </View>
       </View>
+
+      <ScanResultModal
+        visible={resultModal.visible}
+        type={resultModal.type}
+        title={resultModal.title}
+        message={resultModal.message}
+        primaryLabel={resultModal.primaryLabel}
+        onPrimary={runPrimaryAction}
+        onDismiss={dismissModal}
+      />
     </SafeAreaView>
   );
 }
@@ -783,9 +1027,11 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     fontSize: Typography.md,
   },
-  cameraContainer: { flex: 1 },
-  camera: { flex: 1 },
-  cameraOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.3)" },
+  cameraContainer: { flex: 1, position: "relative" },
+  cameraOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(0,0,0,0.3)",
+  },
   closeButton: {
     position: "absolute",
     top: Spacing.md,
@@ -811,34 +1057,10 @@ const styles = StyleSheet.create({
     borderColor: Colors.primary,
     borderWidth: 3,
   },
-  cornerTL: {
-    top: -2,
-    left: -2,
-    borderBottomWidth: 0,
-    borderRightWidth: 0,
-    borderRadius: 2,
-  },
-  cornerTR: {
-    top: -2,
-    right: -2,
-    borderBottomWidth: 0,
-    borderLeftWidth: 0,
-    borderRadius: 2,
-  },
-  cornerBL: {
-    bottom: -2,
-    left: -2,
-    borderTopWidth: 0,
-    borderRightWidth: 0,
-    borderRadius: 2,
-  },
-  cornerBR: {
-    bottom: -2,
-    right: -2,
-    borderTopWidth: 0,
-    borderLeftWidth: 0,
-    borderRadius: 2,
-  },
+  cornerTL: { top: -2, left: -2, borderBottomWidth: 0, borderRightWidth: 0, borderRadius: 2 },
+  cornerTR: { top: -2, right: -2, borderBottomWidth: 0, borderLeftWidth: 0, borderRadius: 2 },
+  cornerBL: { bottom: -2, left: -2, borderTopWidth: 0, borderRightWidth: 0, borderRadius: 2 },
+  cornerBR: { bottom: -2, right: -2, borderTopWidth: 0, borderLeftWidth: 0, borderRadius: 2 },
   scanText: {
     color: Colors.white,
     textAlign: "center",
@@ -858,45 +1080,75 @@ const styles = StyleSheet.create({
     marginTop: Spacing.sm,
     fontSize: Typography.sm,
   },
-  resultOverlay: {
-    position: "absolute",
-    bottom: Spacing["4xl"],
-    left: Spacing["2xl"],
-    right: Spacing["2xl"],
-    backgroundColor: "rgba(0,0,0,0.8)",
-    borderRadius: BorderRadius["2xl"],
-    padding: Spacing["2xl"],
+
+  // Result modal
+  alertOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.5)",
+    justifyContent: "center",
     alignItems: "center",
+    padding: Spacing["2xl"],
   },
-  resultContent: { alignItems: "center" },
-  resultTitle: {
-    color: Colors.white,
+  alertContainer: {
+    backgroundColor: Colors.white,
+    borderRadius: BorderRadius["2xl"],
+    width: "100%",
+    maxWidth: 380,
+    ...Shadows.lg,
+    overflow: "hidden",
+  },
+  alertHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    padding: Spacing.lg,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.gray100,
+  },
+  alertTitle: {
     fontSize: Typography.lg,
     fontWeight: "bold",
-    marginTop: Spacing.sm,
+    color: Colors.gray900,
+    flex: 1,
   },
-  resultSubtitle: {
-    color: Colors.gray300,
-    fontSize: Typography.sm,
-    marginTop: Spacing.xs,
+  alertCloseButton: { padding: Spacing.xs },
+  alertBody: {
+    padding: Spacing.lg,
+    paddingVertical: Spacing["2xl"],
+    alignItems: "center",
   },
-  resultNextAction: {
-    color: Colors.primary,
-    fontSize: Typography.sm,
-    marginTop: Spacing.xs,
-    fontWeight: "500",
+  alertIcon: { marginBottom: Spacing.sm },
+  alertMessage: {
+    fontSize: Typography.md,
+    color: Colors.gray700,
+    lineHeight: 24,
+    textAlign: "center",
   },
-  resultStatus: {
-    color: Colors.gray300,
-    fontSize: Typography.sm,
-    marginTop: 2,
+  alertFooter: {
+    flexDirection: "row",
+    padding: Spacing.md,
+    borderTopWidth: 1,
+    borderTopColor: Colors.gray100,
+    justifyContent: "flex-end",
   },
-  resultButton: {
-    marginTop: Spacing.md,
-    backgroundColor: Colors.primary,
-    paddingHorizontal: Spacing["2xl"],
+  alertButton: {
     paddingVertical: Spacing.sm,
+    paddingHorizontal: Spacing["2xl"],
     borderRadius: BorderRadius.lg,
+    minWidth: 80,
+    alignItems: "center",
   },
-  resultButtonText: { color: Colors.white, fontWeight: "600" },
+  alertButtonMargin: { marginLeft: Spacing.sm },
+  alertPrimaryButton: { backgroundColor: Colors.primary },
+  alertCancelButton: { backgroundColor: Colors.gray200 },
+  alertPrimaryText: {
+    color: Colors.white,
+    fontWeight: "600",
+    fontSize: Typography.sm,
+  },
+  alertCancelText: {
+    color: Colors.gray700,
+    fontWeight: "600",
+    fontSize: Typography.sm,
+  },
 });

@@ -12,9 +12,7 @@
       "resizeMode": "contain",
       "backgroundColor": "#ffffff"
     },
-    "assetBundlePatterns": [
-      "**/*"
-    ],
+    "assetBundlePatterns": ["**/*"],
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.moxekhan1.storemanagement",
@@ -55,9 +53,11 @@
         "projectId": "4c898f38-30ba-4373-b3f8-975de4cdcbfb"
       }
     },
+
     "plugins": [
       "expo-router",
       "expo-secure-store",
+      "expo-camera",
       "@react-native-community/datetimepicker"
     ]
   }

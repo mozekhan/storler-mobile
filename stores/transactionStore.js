@@ -27,24 +27,6 @@ const useTransactionStore = create((set, get) => ({
     }
   },
 
-  // fetchTransaction: async (id, force = false) => {
-  //   if (!force && get().currentTransaction?._id === id) {
-  //     return get().currentTransaction;
-  //   }
-
-  //   set({ isLoading: true, error: null });
-  //   try {
-  //     const transaction = await TransactionService.getTransaction(id);
-  //     set({ currentTransaction: transaction, isLoading: false });
-  //     return transaction;
-  //   } catch (error) {
-  //     set({ error: error.message, isLoading: false });
-  //     throw error;
-  //   }
-  // },
-
-
-
   fetchTransaction: async (id, forceRefresh = false) => {
     try {
       set({ isLoading: true, error: null });
@@ -79,30 +61,77 @@ const useTransactionStore = create((set, get) => ({
   },
 
   // Alias for fetchTransaction with receipt data (for consistency)
+  // fetchTransactionWithReceipt: async (id) => {
+  //   return get().fetchTransaction(id);
+  // },
   fetchTransactionWithReceipt: async (id) => {
-    return get().fetchTransaction(id);
+    set({ isLoading: true, error: null });
+    try {
+      const result = await TransactionService.getTransaction(id);
+      
+      // The service already flattens the response, but let's ensure we have the right structure
+      let transaction = result;
+      
+      // If the result still has a transaction property (backup check), flatten it
+      if (result && result.transaction) {
+        transaction = {
+          ...result.transaction,
+          receiptData: result.receiptData || result.transaction.receiptData || null,
+        };
+      }
+      
+      // Ensure receiptData is properly structured
+      if (transaction && !transaction.receiptData && transaction.items) {
+        // Generate receipt data from transaction if not present
+        transaction.receiptData = {
+          items: transaction.items || [],
+          summary: {
+            subtotal: transaction.subtotal || 0,
+            taxTotal: transaction.taxTotal || 0,
+            totalAmount: transaction.totalAmount || 0,
+            paymentMethod: transaction.paymentMethod || 'N/A',
+            amountPaid: transaction.amountPaid || 0,
+            changeAmount: transaction.changeAmount || 0,
+          },
+          staff: {
+            salesAttendant: transaction.salesAttendantId || null,
+            financeAttendant: transaction.financeAttendantId || null,
+            warehouseStaff: transaction.warehouseStaffId || null,
+          },
+          timeline: {
+            created: transaction.createdAt,
+            sales: transaction.salesTimestamp,
+            payment: transaction.paymentTimestamp,
+            release: transaction.releaseTimestamp,
+            completed: transaction.updatedAt,
+          }
+        };
+      }
+      
+      set({ 
+        currentTransaction: transaction, 
+        isLoading: false 
+      });
+      
+      return transaction;
+    } catch (error) {
+      console.error('Failed to fetch transaction:', error);
+      set({ 
+        error: error.message || 'Failed to fetch transaction', 
+        isLoading: false 
+      });
+      throw error;
+    }
   },
 
-  // Add to your transactionStore
-// fetchTransactionWithReceipt: async (id) => {
-//   try {
-//     set(state => ({ ...state, isLoading: true }));
-//     const response = await api.get(`/transactions/${id}`);
-//     if (response.data.success) {
-//       set(state => ({
-//         ...state,
-//         currentTransaction: {
-//           ...response.data.data.transaction,
-//           receiptData: response.data.data.receiptData
-//         },
-//         isLoading: false
-//       }));
-//     }
-//   } catch (error) {
-//     set(state => ({ ...state, isLoading: false }));
-//     throw error;
-//   }
-// },
+  setCurrentTransaction: (transaction) => {
+    set({ currentTransaction: transaction });
+  },
+
+  clearCurrentTransaction: () => {
+    set({ currentTransaction: null, error: null });
+  },
+
 
   createTransaction: async () => {
     set({ isLoading: true, error: null });

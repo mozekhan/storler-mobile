@@ -724,7 +724,7 @@ import {
   StyleSheet,
 } from 'react-native';
 import { useRouter } from 'expo-router';
-import { Store, Plus, Edit, Trash2, MapPin, Phone, Mail, Search, X, ChevronRight } from 'lucide-react-native';
+import { Store, Plus, Edit, Trash2, MapPin, Phone, Mail, Users, Search, X, ChevronRight } from 'lucide-react-native';
 import StoreService from '../../../services/storeService';
 import { formatDate } from '../../../utils/formatters';
 import { Colors, Spacing, Typography, BorderRadius, Shadows } from '../../../constants/theme';
@@ -895,6 +895,14 @@ export default function AdminStoreManagement() {
             <Text style={styles.storeContactText} numberOfLines={1}>{item.email}</Text>
           </View>
         )}
+      </View>
+
+       {/* Add Staff Count */}
+      <View style={styles.storeStaffCount}>
+        <Users size={14} color={Colors.gray500} />
+        <Text style={styles.storeStaffCountText}>
+          {item.stats?.users || 0} Staff Members
+        </Text>
       </View>
 
       <View style={styles.storeItemFooter}>
@@ -1256,6 +1264,17 @@ const styles = StyleSheet.create({
     color: Colors.gray500, 
     marginLeft: Spacing.xs 
   },
+
+  storeStaffCount: {
+  flexDirection: "row",
+  alignItems: "center",
+  marginTop: Spacing.xs,
+  gap: Spacing.xs,
+},
+storeStaffCountText: {
+  fontSize: Typography.xs,
+  color: Colors.gray500,
+},
   
   // Footer
   storeItemFooter: { 

@@ -1,53 +1,70 @@
-
 // // services/printer/PrinterService.js
-// /**
-//  * Talks directly to react-native-thermal-pos-printer's real, verified API
-//  * (https://github.com/CoFixer/react-native-thermal-pos-printer). No
-//  * BluetoothManager/EscPosPrinter layer needed - this library already
-//  * provides connection management + native text/QR/barcode/raw printing.
-//  *
-//  * IMPORTANT - bugs fixed from the previous version of this file:
-//  *
-//  * 1. `ReactNativePosPrinter.discoverDevices(timeout)` and
-//  *    `ReactNativePosPrinter.getDevice(address)` do NOT exist in this
-//  *    library (verified against the published source on npm/GitHub). The
-//  *    only device-listing method is `getDeviceList()` (bonded/paired devices
-//  *    only - no live discovery scan), and connecting is done with the static
-//  *    `connectPrinter(address, options)`, not by fetching a device object
-//  *    first. Calling either nonexistent method throws
-//  *    "... is not a function", which is exactly the error you were seeing.
-//  *
-//  * 2. `requestBluetoothPermissions` is an internal utility in this package,
-//  *    NOT re-exported from its public entry point - importing it from
-//  *    'react-native-thermal-pos-printer' resolves to undefined. Permission
-//  *    requesting is implemented locally here instead.
-//  *
-//  * 3. PrinterService was missing several methods that
-//  *    BluetoothPrinterModal.jsx actually calls (getPaperSize, setPaperSize,
-//  *    getAutoConnect, setAutoConnect, printSalesReceipt, printPaymentReceipt,
-//  *    printReleaseReceipt, printPureEscPos, testPrint, diagnosticPrint) -
-//  *    calling any of them threw "is not a function". All are implemented
-//  *    below.
-//  *
-//  * 4. getPairedDevices()/scanForDevices() now validate that each device has a
-//  *    real `address` before returning it, instead of silently passing through
-//  *    a malformed {name: undefined, address: undefined} entry that fails
-//  *    later at connect time with "No Bluetooth address found."
-//  */
+
 // import { Platform, PermissionsAndroid } from 'react-native';
-// import ReactNativePosPrinter, { ESCPOSCommands } from 'react-native-thermal-pos-printer';
-// import ReceiptFormatter, { PRINTER_TYPES } from './ReceiptFormatter';
+
+// import ReactNativePosPrinter from 'react-native-thermal-pos-printer';
+
+// import ReceiptFormatter, { TEXT_SIZE } from './ReceiptFormatter';
+
 // import PrinterStorage from './PrinterStorage';
 
+// import { generateQRCodeImage } from './QRCodeGenerator';
+
+// /**
+//  * PrinterService
+//  *
+//  * Responsible for:
+//  * - Bluetooth permissions
+//  * - printer initialization
+//  * - device discovery
+//  * - connection
+//  * - disconnection
+//  * - printer settings
+//  * - receipt formatting orchestration
+//  * - executing receipt nodes
+//  * - test printing
+//  *
+//  * ReceiptFormatter is responsible only for creating nodes.
+//  *
+//  * QR CODE PRINTING
+//  * -----------------
+//  * QR codes are printed via the library's native printQRCode() first -
+//  * the printer's own firmware draws the modules directly at native
+//  * resolution, with no client-side image resize/threshold/dither step
+//  * to degrade small, precisely-aligned module edges the way pushing a
+//  * rasterized bitmap through printImage() can (observed in practice:
+//  * a bitmap QR that decoded perfectly in isolation still failed to
+//  * scan once printed, while the same payload via native printQRCode
+//  * did not).
+//  *
+//  * This used to be the OTHER way around, because native printQRCode
+//  * appeared unreliable - it would print a wall of raw text instead of
+//  * a QR code. That turned out to be a content bug elsewhere in the
+//  * app: printQRCode was being handed an entire rendered PNG data-URL
+//  * (thousands of characters) instead of the actual short signed
+//  * payload string, which exceeds QR capacity and made printers fall
+//  * back to dumping it as text. That's fixed upstream now (the caller
+//  * always passes the raw signed string), so native QR gets first try
+//  * again. The bitmap+printImage() approach (QRCodeGenerator) remains
+//  * as a fallback for devices/libraries that don't support native QR
+//  * at all, with a larger default module size than the bitmap alone
+//  * would need, to leave headroom against printImage()'s own
+//  * processing. Final fallback is wrapped raw text, so a QR failure
+//  * never silently drops that part of the receipt.
+//  */
 // class PrinterService {
 //   static instance = null;
 
 //   constructor() {
-//     if (PrinterService.instance) return PrinterService.instance;
-//     this.currentPrinter = null; // ThermalPrinterDevice instance once connected
+//     if (PrinterService.instance) {
+//       return PrinterService.instance;
+//     }
+
+//     this.currentPrinter = null;
 //     this.connectionState = 'disconnected';
 //     this.connectionListeners = [];
 //     this.isInitialized = false;
+
 //     PrinterService.instance = this;
 //   }
 
@@ -55,136 +72,169 @@
 //     if (!PrinterService.instance) {
 //       PrinterService.instance = new PrinterService();
 //     }
+
 //     return PrinterService.instance;
 //   }
 
-//   // ============= Permissions =============
+//   // ============================================================
+//   // PERMISSIONS
+//   // ============================================================
+
 //   async requestPermissions() {
-//     if (Platform.OS !== 'android') return true;
+//     if (Platform.OS !== 'android') {
+//       return true;
+//     }
+
 //     try {
-//       const permissions = Platform.Version >= 31
-//         ? [PermissionsAndroid.PERMISSIONS.BLUETOOTH_SCAN, PermissionsAndroid.PERMISSIONS.BLUETOOTH_CONNECT]
-//         : [PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION];
+//       const permissions =
+//         Platform.Version >= 31
+//           ? [
+//               PermissionsAndroid.PERMISSIONS.BLUETOOTH_SCAN,
+//               PermissionsAndroid.PERMISSIONS.BLUETOOTH_CONNECT,
+//             ]
+//           : [PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION];
 
 //       const result = await PermissionsAndroid.requestMultiple(permissions);
-//       return permissions.every((p) => result[p] === PermissionsAndroid.RESULTS.GRANTED);
+
+//       return permissions.every(
+//         permission =>
+//           result[permission] === PermissionsAndroid.RESULTS.GRANTED,
+//       );
 //     } catch (error) {
-//       console.error('Permission error:', error);
+//       console.error('Bluetooth permission error:', error);
 //       return false;
 //     }
 //   }
 
-//   // ============= Lifecycle =============
+//   // ============================================================
+//   // INITIALIZATION
+//   // ============================================================
+
 //   async initialize() {
-//     if (this.isInitialized) return true;
+//     if (this.isInitialized) {
+//       return true;
+//     }
+
 //     try {
-//       const hasPermission = await this.requestPermissions();
-//       if (!hasPermission) {
-//         console.warn('Bluetooth permission denied - device list will likely be empty');
+//       const permissionGranted = await this.requestPermissions();
+
+//       if (!permissionGranted) {
+//         console.warn('Bluetooth permission was not granted.');
 //       }
 
 //       await ReactNativePosPrinter.init();
+
 //       this.isInitialized = true;
-//       console.log('PrinterService initialized.');
+
+//       console.log('[PrinterService] Initialized.');
+
 //       await this.autoConnect();
+
 //       return true;
 //     } catch (error) {
-//       console.error('Failed to initialize PrinterService:', error);
+//       console.error('[PrinterService] Initialization failed:', error);
+//       this.isInitialized = false;
 //       return false;
 //     }
 //   }
 
-//   // ============= Discovery =============
-//   // This library only lists bonded/paired devices (no live discovery scan) -
-//   // pair the printer via Android Bluetooth settings first. Any entry missing
-//   // a usable address is dropped rather than handed to the UI, since it can
-//   // never be connected to anyway.
+//   // ============================================================
+//   // DEVICE DISCOVERY
+//   // ============================================================
+
+//   // This library only lists bonded/paired devices (no live discovery
+//   // scan) - pair the printer via Android Bluetooth settings first.
+//   // Any entry missing a usable address is dropped, since it can never
+//   // be connected to anyway.
 //   async getPairedDevices() {
 //     try {
+//       if (!this.isInitialized) {
+//         await this.initialize();
+//       }
+
 //       const devices = await ReactNativePosPrinter.getDeviceList();
 
-//       if (!devices || !Array.isArray(devices)) {
-//         console.warn('getDeviceList returned no devices');
+//       if (!Array.isArray(devices)) {
+//         console.warn('[PrinterService] No printer devices returned.');
 //         return [];
 //       }
 
-//       const mapped = devices
-//         .map((device) => ({
-//           name: device.name || device.getName?.() || 'Unknown Device',
-//           address: device.address || device.getAddress?.(),
-//           type: device.type || device.getType?.() || 'BLUETOOTH',
-//           connected: device.connected || false,
-//           rssi: device.rssi,
-//           batteryLevel: device.batteryLevel,
+//       return devices
+//         .map(device => ({
+//           name: device?.name || device?.getName?.() || 'Unknown Device',
+//           address: device?.address || device?.getAddress?.(),
+//           type: device?.type || device?.getType?.() || 'BLUETOOTH',
+//           connected: Boolean(device?.connected),
+//           rssi: device?.rssi,
+//           batteryLevel: device?.batteryLevel,
 //         }))
-//         .filter((d) => {
-//           if (!d.address) {
-//             console.warn('Dropping paired device with no address:', d);
+//         .filter(device => {
+//           if (!device.address) {
+//             console.warn(
+//               '[PrinterService] Ignoring printer without Bluetooth address:',
+//               device,
+//             );
 //             return false;
 //           }
 //           return true;
 //         });
-
-//       if (mapped.length === 0) {
-//         console.warn('No usable paired printers found. Pair the printer in Android Bluetooth settings first.');
-//       }
-
-//       return mapped;
 //     } catch (error) {
-//       console.error('Failed to get paired devices:', error);
+//       console.error('[PrinterService] Failed to get paired printers:', error);
 //       return [];
 //     }
 //   }
 
-//   // No live discovery scan exists in this library - scanForDevices is just
-//   // an alias so existing UI code (a "scan" button) keeps working.
 //   async scanForDevices() {
 //     return this.getPairedDevices();
 //   }
 
-//   // ============= Connection =============
+//   // ============================================================
+//   // CONNECTION
+//   // ============================================================
+
 //   async connectToPrinter(deviceInfo) {
 //     this.connectionState = 'connecting';
 //     this.notifyListeners();
 
 //     try {
-//       console.log('Selected printer:', deviceInfo);
-
-//       const deviceAddress = deviceInfo?.address;
-//       if (!deviceAddress) {
-//         throw new Error(
-//           `No Bluetooth address found.\nDevice: ${JSON.stringify(deviceInfo, null, 2)}\n` +
-//           `This usually means the device came from a malformed list entry - ` +
-//           `reopen the printer list and make sure the printer is paired in ` +
-//           `Android Bluetooth settings.`
-//         );
+//       if (!deviceInfo?.address) {
+//         throw new Error('The selected printer has no Bluetooth address.');
 //       }
 
-//       // connectPrinter is the ONLY connect API - it connects AND returns the
-//       // connected ThermalPrinterDevice in one call.
-//       const printerDevice = await ReactNativePosPrinter.connectPrinter(deviceAddress, {
-//         type: deviceInfo.type || 'BLUETOOTH',
-//       });
+//       if (!this.isInitialized) {
+//         await this.initialize();
+//       }
 
-//       this.currentPrinter = printerDevice;
+//       console.log('[PrinterService] Connecting to:', deviceInfo);
+
+//       const printer = await ReactNativePosPrinter.connectPrinter(
+//         deviceInfo.address,
+//         { type: deviceInfo.type || 'BLUETOOTH' },
+//       );
+
+//       this.currentPrinter = printer;
 //       this.connectionState = 'connected';
 
-//       const savedDevice = {
-//         name: deviceInfo.name || 'Unknown',
-//         address: deviceAddress,
+//       const savedPrinter = {
+//         name: deviceInfo.name || 'Unknown Printer',
+//         address: deviceInfo.address,
 //         type: deviceInfo.type || 'BLUETOOTH',
 //       };
 
-//       await PrinterStorage.saveDefaultPrinter(savedDevice);
-//       await PrinterStorage.saveLastPrinter(savedDevice);
+//       await PrinterStorage.saveDefaultPrinter(savedPrinter);
+//       await PrinterStorage.saveLastPrinter(savedPrinter);
 
 //       this.notifyListeners();
-//       console.log(`Connected to ${deviceInfo.name}`);
+
+//       console.log(`[PrinterService] Connected to ${savedPrinter.name}`);
+
 //       return true;
 //     } catch (error) {
+//       this.currentPrinter = null;
 //       this.connectionState = 'error';
 //       this.notifyListeners();
-//       console.error('Connection error:', error);
+
+//       console.error('[PrinterService] Printer connection failed:', error);
 //       throw error;
 //     }
 //   }
@@ -193,38 +243,57 @@
 //     try {
 //       await ReactNativePosPrinter.disconnectPrinter();
 //     } catch (error) {
-//       console.warn('Error during disconnect:', error);
+//       console.warn('[PrinterService] Disconnect warning:', error);
 //     }
+
 //     this.currentPrinter = null;
 //     this.connectionState = 'disconnected';
 //     this.notifyListeners();
-//     console.log('Disconnected from printer.');
 //   }
 
 //   async autoConnect() {
 //     try {
-//       const autoConnectEnabled = await PrinterStorage.getAutoConnect();
-//       if (!autoConnectEnabled) return false;
+//       const enabled = await PrinterStorage.getAutoConnect();
 
-//       const defaultPrinter = await PrinterStorage.getDefaultPrinter();
-//       if (!defaultPrinter?.address) return false;
+//       if (!enabled) {
+//         return false;
+//       }
 
-//       return await this.connectToPrinter(defaultPrinter);
+//       const printer = await PrinterStorage.getDefaultPrinter();
+
+//       if (!printer?.address) {
+//         return false;
+//       }
+
+//       return this.connectToPrinter(printer);
 //     } catch (error) {
+//       console.warn('[PrinterService] Auto-connect failed:', error);
 //       return false;
 //     }
 //   }
 
-//   // ============= Status =============
+//   // ============================================================
+//   // STATUS
+//   // ============================================================
+
 //   isConnected() {
-//     return this.connectionState === 'connected' && this.currentPrinter !== null;
+//     return (
+//       this.connectionState === 'connected' && this.currentPrinter !== null
+//     );
 //   }
 
 //   getCurrentDevice() {
-//     if (!this.currentPrinter) return null;
+//     if (!this.currentPrinter) {
+//       return null;
+//     }
+
 //     return {
-//       name: this.currentPrinter.getName?.() || this.currentPrinter.name || 'Unknown',
-//       address: this.currentPrinter.getAddress?.() || this.currentPrinter.address,
+//       name:
+//         this.currentPrinter.getName?.() ||
+//         this.currentPrinter.name ||
+//         'Unknown Printer',
+//       address:
+//         this.currentPrinter.getAddress?.() || this.currentPrinter.address,
 //       type: this.currentPrinter.getType?.() || this.currentPrinter.type,
 //     };
 //   }
@@ -238,685 +307,609 @@
 //   }
 
 //   addConnectionListener(listener) {
+//     if (typeof listener !== 'function') {
+//       return () => {};
+//     }
+
 //     this.connectionListeners.push(listener);
+
 //     try {
 //       listener(this.getConnectionStatus());
-//     } catch (e) {
-//       console.warn('Error in connection listener:', e);
+//     } catch (error) {
+//       console.warn('[PrinterService] Connection listener error:', error);
 //     }
+
 //     return () => {
-//       this.connectionListeners = this.connectionListeners.filter((l) => l !== listener);
+//       this.connectionListeners = this.connectionListeners.filter(
+//         item => item !== listener,
+//       );
 //     };
 //   }
 
 //   notifyListeners() {
 //     const status = this.getConnectionStatus();
-//     this.connectionListeners.forEach((listener) => {
+
+//     this.connectionListeners.forEach(listener => {
 //       try {
 //         listener(status);
 //       } catch (error) {
-//         console.error('Error notifying listener:', error);
+//         console.warn('[PrinterService] Connection listener error:', error);
 //       }
 //     });
 //   }
 
-//   // ============= Settings passthrough (PrinterStorage) =============
-//   // BluetoothPrinterModal.jsx calls these directly on PrinterService.
-//   async getPaperSize() { return PrinterStorage.getPaperSize(); }
-//   async setPaperSize(size) { return PrinterStorage.savePaperSize(size); }
-//   async getAutoConnect() { return PrinterStorage.getAutoConnect(); }
-//   async setAutoConnect(enabled) { return PrinterStorage.saveAutoConnect(enabled); }
-//   async getPrintCopies() { return PrinterStorage.getPrintCopies(); }
-//   async setPrintCopies(copies) { return PrinterStorage.savePrintCopies(copies); }
+//   // ============================================================
+//   // SETTINGS
+//   // ============================================================
+
+//   async getPaperSize() {
+//     return PrinterStorage.getPaperSize();
+//   }
+
+//   async setPaperSize(size) {
+//     const normalized = size === '80mm' ? '80mm' : '58mm';
+//     return PrinterStorage.savePaperSize(normalized);
+//   }
+
+//   async getAutoConnect() {
+//     return PrinterStorage.getAutoConnect();
+//   }
+
+//   async setAutoConnect(enabled) {
+//     return PrinterStorage.saveAutoConnect(Boolean(enabled));
+//   }
+
+//   async getPrintCopies() {
+//     return PrinterStorage.getPrintCopies();
+//   }
+
+//   async setPrintCopies(copies) {
+//     const parsed = Number.parseInt(copies, 10);
+//     const count = Number.isFinite(parsed) ? Math.min(Math.max(parsed, 1), 10) : 1;
+//     return PrinterStorage.savePrintCopies(count);
+//   }
 
 //   async getPaperWidth() {
-//     const paperSize = await this.getPaperSize();
-//     return paperSize === '80mm' ? 48 : 32;
+//     const size = await this.getPaperSize();
+//     return size === '80mm' ? 48 : 32;
 //   }
 
-//   // ============= Printing =============
-//   async printReceipt(receiptData, receiptType) {
+//   // ============================================================
+//   // RECEIPT PRINTING
+//   // ============================================================
+
+//   async printReceipt(receiptData, receiptType = 'SALES') {
 //     if (!this.isConnected()) {
-//       throw new Error('No printer connected');
+//       throw new Error('No printer connected.');
 //     }
 
-//     const printer = this.currentPrinter;
-//     const copies = (await this.getPrintCopies()) || 1;
+//     const copies = Math.max(1, Number((await this.getPrintCopies()) || 1));
 //     const deviceName = this.getCurrentDevice()?.name || '';
+//     const paperSize = await this.getPaperSize();
 
+//     // Configure formatter.
 //     ReceiptFormatter.detectPrinterType(deviceName);
-//     ReceiptFormatter.setPaperSize(await this.getPaperSize());
-//     const nodes = ReceiptFormatter.formatReceipt(receiptData, receiptType, deviceName);
+//     ReceiptFormatter.setPaperSize(paperSize);
 
-//     for (let i = 0; i < copies; i++) {
-//       await this._printNodes(printer, nodes);
-//       console.log(`Printed copy ${i + 1} of ${copies}`);
+//     const nodes = ReceiptFormatter.formatReceipt(
+//       receiptData || {},
+//       receiptType,
+//       deviceName,
+//     );
+
+//     console.log('[PrinterService] Receipt generated:', {
+//       receiptType,
+//       paperSize,
+//       width: ReceiptFormatter.getWidth(),
+//       nodeCount: nodes.length,
+//       printer: deviceName,
+//     });
+
+//     for (let copy = 0; copy < copies; copy++) {
+//       await this._printNodes(nodes);
+//       console.log(`[PrinterService] Receipt copy ${copy + 1}/${copies} printed.`);
 //     }
-//     return { success: true };
-//   }
-
-//   async printSalesReceipt(receiptData) { return this.printReceipt(receiptData, 'SALES'); }
-//   async printPaymentReceipt(receiptData) { return this.printReceipt(receiptData, 'PAYMENT'); }
-//   async printReleaseReceipt(receiptData) { return this.printReceipt(receiptData, 'RELEASE'); }
-
-//   async _printNodes(printer, nodes) {
-//     if (!nodes || nodes.length === 0) return;
-
-//     for (const node of nodes) {
-//       switch (node.type) {
-//         case 'text': {
-//           const style = this._convertStyle(node.style);
-//           await printer.printText(node.content + '\n', style);
-//           break;
-//         }
-//         case 'line': {
-//           const width = await this.getPaperWidth();
-//           const lineStr = node.style === 'dashed' ? '-'.repeat(width) : '='.repeat(width);
-//           await printer.printText(lineStr + '\n');
-//           break;
-//         }
-//         case 'qr': {
-//           await printer.printQRCode(node.content, {
-//             align: node.align === 'center' ? 'CENTER' : 'LEFT',
-//             size: node.size || 4,
-//             errorLevel: 'M',
-//           });
-//           break;
-//         }
-//         case 'feed': {
-//           await ReactNativePosPrinter.newLine(Math.min(node.lines || 3, 10));
-//           break;
-//         }
-//         case 'cut': {
-//           await printer.cutPaper();
-//           break;
-//         }
-//         default:
-//           console.warn('Unsupported node type:', node.type);
-//       }
-//     }
-//   }
-
-//   _convertStyle(style = {}) {
-//     const alignMap = { left: 'LEFT', center: 'CENTER', right: 'RIGHT' };
-//     const sizeMap = { 1: 'NORMAL', 2: 'LARGE', 3: 'XLARGE' };
 
 //     return {
-//       align: alignMap[style.align] || 'LEFT',
-//       size: sizeMap[style.size] || 'NORMAL',
-//       bold: !!style.bold,
-//       underline: !!style.underline,
+//       success: true,
+//       copies,
+//       paperSize,
+//       nodeCount: nodes.length,
 //     };
 //   }
 
-//   // ============= Test / diagnostics =============
-//   // Minimal, dependency-free raw ESC/POS test page - useful to confirm the
-//   // transport itself works independent of ReceiptFormatter/QR.
-//   async testPrint() {
-//     if (!this.isConnected()) {
-//       throw new Error('No printer connected');
-//     }
-//     const bytes = [
-//       ...ESCPOSCommands.INIT,
-//       ...ESCPOSCommands.ALIGN_CENTER,
-//       ...ESCPOSCommands.BOLD_ON,
-//       ...'TEST PRINT'.split('').map((c) => c.charCodeAt(0)),
-//       ...ESCPOSCommands.LINE_FEED,
-//       ...ESCPOSCommands.BOLD_OFF,
-//       ...ESCPOSCommands.ALIGN_LEFT,
-//       ...'Line 1: Normal text'.split('').map((c) => c.charCodeAt(0)),
-//       ...ESCPOSCommands.LINE_FEED,
-//       ...ESCPOSCommands.LINE_FEED,
-//       ...ESCPOSCommands.LINE_FEED,
-//       ...ESCPOSCommands.CUT_PAPER,
-//     ];
-//     console.log('Sending test print (raw ESC/POS)...');
-//     await ReactNativePosPrinter.sendRawCommand(bytes);
-//     return { success: true };
+//   async printSalesReceipt(data) {
+//     return this.printReceipt(data, 'SALES');
 //   }
 
-//   // Legacy manual-bytes path some UI still calls directly - builds a plain
-//   // text receipt without going through ReceiptFormatter, useful as a
-//   // last-resort fallback if node-based printing ever misbehaves.
-//   async printPureEscPos(receiptData, receiptType) {
-//     if (!this.isConnected()) {
-//       throw new Error('No printer connected');
-//     }
-//     const width = await this.getPaperWidth();
-//     const bytes = [...ESCPOSCommands.INIT];
-//     const pushText = (text) => bytes.push(...text.split('').map((c) => c.charCodeAt(0) & 0x7F));
-
-//     if (receiptData?.store?.name) {
-//       bytes.push(...ESCPOSCommands.ALIGN_CENTER, ...ESCPOSCommands.BOLD_ON);
-//       pushText(receiptData.store.name);
-//       bytes.push(...ESCPOSCommands.LINE_FEED, ...ESCPOSCommands.BOLD_OFF, ...ESCPOSCommands.ALIGN_LEFT);
-//     }
-//     bytes.push(...'-'.repeat(width).split('').map((c) => c.charCodeAt(0)), ...ESCPOSCommands.LINE_FEED);
-//     pushText(`${receiptType || 'RECEIPT'}`);
-//     bytes.push(...ESCPOSCommands.LINE_FEED);
-//     if (receiptData?.summary?.totalAmount !== undefined) {
-//       pushText(`TOTAL: N${Number(receiptData.summary.totalAmount).toFixed(2)}`);
-//       bytes.push(...ESCPOSCommands.LINE_FEED);
-//     }
-//     bytes.push(...ESCPOSCommands.LINE_FEED, ...ESCPOSCommands.LINE_FEED, ...ESCPOSCommands.LINE_FEED, ...ESCPOSCommands.CUT_PAPER);
-
-//     await ReactNativePosPrinter.sendRawCommand(bytes);
-//     return { success: true };
+//   async printPaymentReceipt(data) {
+//     return this.printReceipt(data, 'PAYMENT');
 //   }
 
-//   async diagnosticPrint() {
-//     const results = [];
-//     try {
-//       await this.testPrint();
-//       results.push({ method: 'testPrint', success: true });
-//     } catch (e) {
-//       results.push({ method: 'testPrint', success: false, error: e.message });
-//     }
-//     try {
-//       await this.printReceipt(
-//         { store: { name: 'DIAGNOSTIC' }, summary: { totalAmount: 0 } },
-//         'SALES',
-//       );
-//       results.push({ method: 'printReceipt', success: true });
-//     } catch (e) {
-//       results.push({ method: 'printReceipt', success: false, error: e.message });
-//     }
-//     console.log('Diagnostic results:', results);
-//     return results;
-//   }
-// }
-
-// export default PrinterService.getInstance();
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-// // services/printer/PrinterService.js
-// /**
-//  * Talks directly to react-native-thermal-pos-printer's real, verified API
-//  * (https://github.com/CoFixer/react-native-thermal-pos-printer). No
-//  * BluetoothManager/EscPosPrinter layer needed - this library already
-//  * provides connection management + native text/QR/barcode/raw printing.
-//  *
-//  * IMPORTANT - bugs fixed from the previous version of this file:
-//  *
-//  * 1. `ReactNativePosPrinter.discoverDevices(timeout)` and
-//  *    `ReactNativePosPrinter.getDevice(address)` do NOT exist in this
-//  *    library (verified against the published source on npm/GitHub). The
-//  *    only device-listing method is `getDeviceList()` (bonded/paired devices
-//  *    only - no live discovery scan), and connecting is done with the static
-//  *    `connectPrinter(address, options)`, not by fetching a device object
-//  *    first. Calling either nonexistent method throws
-//  *    "... is not a function", which is exactly the error you were seeing.
-//  *
-//  * 2. `requestBluetoothPermissions` is an internal utility in this package,
-//  *    NOT re-exported from its public entry point - importing it from
-//  *    'react-native-thermal-pos-printer' resolves to undefined. Permission
-//  *    requesting is implemented locally here instead.
-//  *
-//  * 3. PrinterService was missing several methods that
-//  *    BluetoothPrinterModal.jsx actually calls (getPaperSize, setPaperSize,
-//  *    getAutoConnect, setAutoConnect, printSalesReceipt, printPaymentReceipt,
-//  *    printReleaseReceipt, printPureEscPos, testPrint, diagnosticPrint) -
-//  *    calling any of them threw "is not a function". All are implemented
-//  *    below.
-//  *
-//  * 4. getPairedDevices()/scanForDevices() now validate that each device has a
-//  *    real `address` before returning it, instead of silently passing through
-//  *    a malformed {name: undefined, address: undefined} entry that fails
-//  *    later at connect time with "No Bluetooth address found."
-//  */
-// import { Platform, PermissionsAndroid } from 'react-native';
-// import ReactNativePosPrinter, { ESCPOSCommands } from 'react-native-thermal-pos-printer';
-// import ReceiptFormatter, { PRINTER_TYPES } from './ReceiptFormatter';
-// import PrinterStorage from './PrinterStorage';
-
-// class PrinterService {
-//   static instance = null;
-
-//   constructor() {
-//     if (PrinterService.instance) return PrinterService.instance;
-//     this.currentPrinter = null; // ThermalPrinterDevice instance once connected
-//     this.connectionState = 'disconnected';
-//     this.connectionListeners = [];
-//     this.isInitialized = false;
-//     PrinterService.instance = this;
+//   async printReleaseReceipt(data) {
+//     return this.printReceipt(data, 'RELEASE');
 //   }
 
-//   static getInstance() {
-//     if (!PrinterService.instance) {
-//       PrinterService.instance = new PrinterService();
-//     }
-//     return PrinterService.instance;
+//   async printInvoiceReceipt(data) {
+//     return this.printReceipt(data, 'INVOICE');
 //   }
 
-//   // ============= Permissions =============
-//   async requestPermissions() {
-//     if (Platform.OS !== 'android') return true;
-//     try {
-//       const permissions = Platform.Version >= 31
-//         ? [PermissionsAndroid.PERMISSIONS.BLUETOOTH_SCAN, PermissionsAndroid.PERMISSIONS.BLUETOOTH_CONNECT]
-//         : [PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION];
-
-//       const result = await PermissionsAndroid.requestMultiple(permissions);
-//       return permissions.every((p) => result[p] === PermissionsAndroid.RESULTS.GRANTED);
-//     } catch (error) {
-//       console.error('Permission error:', error);
-//       return false;
-//     }
+//   async printFinalReceipt(data) {
+//     return this.printReceipt(data, 'FINAL');
 //   }
 
-//   // ============= Lifecycle =============
-//   async initialize() {
-//     if (this.isInitialized) return true;
-//     try {
-//       const hasPermission = await this.requestPermissions();
-//       if (!hasPermission) {
-//         console.warn('Bluetooth permission denied - device list will likely be empty');
+//   // ============================================================
+//   // NODE EXECUTION
+//   // ============================================================
+
+//   async _printNodes(nodes) {
+//     if (!Array.isArray(nodes) || nodes.length === 0) {
+//       return;
+//     }
+
+//     for (let index = 0; index < nodes.length; index++) {
+//       const node = nodes[index];
+
+//       if (!node) {
+//         continue;
 //       }
 
-//       await ReactNativePosPrinter.init();
-//       this.isInitialized = true;
-//       console.log('PrinterService initialized.');
-//       await this.autoConnect();
-//       return true;
-//     } catch (error) {
-//       console.error('Failed to initialize PrinterService:', error);
-//       return false;
-//     }
-//   }
+//       try {
+//         switch (node.type) {
+//           // ====================================================
+//           // TEXT
+//           // ====================================================
 
-//   // ============= Discovery =============
-//   // This library only lists bonded/paired devices (no live discovery scan) -
-//   // pair the printer via Android Bluetooth settings first. Any entry missing
-//   // a usable address is dropped rather than handed to the UI, since it can
-//   // never be connected to anyway.
-//   async getPairedDevices() {
-//     try {
-//       const devices = await ReactNativePosPrinter.getDeviceList();
+//           case 'text': {
+//             const style = this._convertStyle(node.style);
+//             const content = `${node.content || ''}\n`;
 
-//       if (!devices || !Array.isArray(devices)) {
-//         console.warn('getDeviceList returned no devices');
-//         return [];
-//       }
+//             console.log('[PrinterService] TEXT:', {
+//               content: node.content,
+//               style,
+//             });
 
-//       const mapped = devices
-//         .map((device) => ({
-//           name: device.name || device.getName?.() || 'Unknown Device',
-//           address: device.address || device.getAddress?.(),
-//           type: device.type || device.getType?.() || 'BLUETOOTH',
-//           connected: device.connected || false,
-//           rssi: device.rssi,
-//           batteryLevel: device.batteryLevel,
-//         }))
-//         .filter((d) => {
-//           if (!d.address) {
-//             console.warn('Dropping paired device with no address:', d);
-//             return false;
+//             await ReactNativePosPrinter.printText(content, style);
+
+//             break;
 //           }
-//           return true;
+
+//           // ====================================================
+//           // LINE
+//           // ====================================================
+
+//           case 'line': {
+//             const width = await this.getPaperWidth();
+//             const character = node.style === 'dashed' ? '-' : '=';
+//             const line = character.repeat(width);
+
+//             await ReactNativePosPrinter.printText(
+//               `${line}\n`,
+//               this._normalStyle('LEFT'),
+//             );
+
+//             break;
+//           }
+
+//           // ====================================================
+//           // QR (see class docstring for why this is image-based)
+//           // ====================================================
+
+//           case 'qr': {
+//             await this._printQRNode(node);
+//             break;
+//           }
+
+//           // ====================================================
+//           // FEED
+//           // ====================================================
+
+//           case 'feed': {
+//             const lines = Math.min(Math.max(Number(node.lines) || 3, 1), 10);
+//             await ReactNativePosPrinter.newLine(lines);
+//             break;
+//           }
+
+//           // ====================================================
+//           // CUT
+//           // ====================================================
+
+//           case 'cut': {
+//             await ReactNativePosPrinter.cutPaper();
+//             break;
+//           }
+
+//           // ====================================================
+//           // UNKNOWN
+//           // ====================================================
+
+//           default:
+//             console.warn('[PrinterService] Unsupported receipt node:', node);
+//         }
+//       } catch (error) {
+//         console.error(
+//           `[PrinterService] Failed printing node ${index} (${node.type}):`,
+//           error,
+//         );
+
+//         throw error;
+//       }
+//     }
+//   }
+
+//   // ============================================================
+//   // QR NODE
+//   // ============================================================
+
+//   /**
+//    * Prints a QR node as an image, with fallbacks so a QR/printer
+//    * quirk degrades gracefully instead of aborting the whole receipt.
+//    *
+//    *   1. Preferred: render a QR bitmap ourselves and printImage() it.
+//    *      This is the reliable, generic-ESC/POS path (see class docstring).
+//    *   2. Fallback: the library's native printQRCode(), in case a given
+//    *      device/library combination can't handle printImage but does
+//    *      support the native QR command correctly.
+//    *   3. Last resort: print the raw data as wrapped text, so the
+//    *      receipt still contains something the customer can act on
+//    *      instead of silently dropping the QR section.
+//    */
+//   async _printQRNode(node) {
+//     const qrData = String(node.content ?? '').trim();
+
+//     if (!qrData) {
+//       console.warn('[PrinterService] QR node has no content.');
+//       return;
+//     }
+
+//     const dotWidth = ReceiptFormatter.getDotWidth();
+
+//     // Leave room on either side so the code doesn't touch the paper edge.
+//     const maxWidthPx = Math.floor(dotWidth * 0.85);
+
+//     // Defensive guard: if something upstream passed an already-rendered
+//     // image (a data: URL) instead of raw scannable text - e.g. a screen
+//     // that displays the QR as <Image source={{uri: qrCode}}> also being
+//     // wired into the print path by mistake - do NOT try to re-encode
+//     // that multi-KB base64 string as new QR "content". Attempting to
+//     // encode thousands of characters into a QR code exceeds QR capacity
+//     // and is exactly what previously caused printers to fall back to
+//     // dumping the raw base64 string as a wall of text. Instead, print
+//     // the image directly: it's already a valid, correctly-sized picture.
+//     const dataUrlMatch = qrData.match(/^data:image\/(png|jpe?g);base64,(.+)$/i);
+
+//     if (dataUrlMatch) {
+//       console.warn(
+//         '[PrinterService] QR node content is a rendered image (data URL), not raw scan data. ' +
+//           'Printing the image as-is instead of re-encoding it as a new QR - ' +
+//           'check the caller: it should be passing the raw signed QR string (e.g. receiptData.qrCode), ' +
+//           'not a rendered/display QR image (e.g. receiptData.qrCodeImage).',
+//       );
+
+//       try {
+//         await ReactNativePosPrinter.printImage(dataUrlMatch[2], {
+//           align: 'CENTER',
+//           width: maxWidthPx,
 //         });
 
-//       if (mapped.length === 0) {
-//         console.warn('No usable paired printers found. Pair the printer in Android Bluetooth settings first.');
-//       }
+//         await ReactNativePosPrinter.newLine(1);
 
-//       return mapped;
-//     } catch (error) {
-//       console.error('Failed to get paired devices:', error);
-//       return [];
-//     }
-//   }
-
-//   // No live discovery scan exists in this library - scanForDevices is just
-//   // an alias so existing UI code (a "scan" button) keeps working.
-//   async scanForDevices() {
-//     return this.getPairedDevices();
-//   }
-
-//   // ============= Connection =============
-//   async connectToPrinter(deviceInfo) {
-//     this.connectionState = 'connecting';
-//     this.notifyListeners();
-
-//     try {
-//       console.log('Selected printer:', deviceInfo);
-
-//       const deviceAddress = deviceInfo?.address;
-//       if (!deviceAddress) {
-//         throw new Error(
-//           `No Bluetooth address found.\nDevice: ${JSON.stringify(deviceInfo, null, 2)}\n` +
-//           `This usually means the device came from a malformed list entry - ` +
-//           `reopen the printer list and make sure the printer is paired in ` +
-//           `Android Bluetooth settings.`
+//         return;
+//       } catch (imagePrintError) {
+//         console.warn(
+//           '[PrinterService] Printing pre-rendered QR image failed, will attempt to continue with fallbacks:',
+//           imagePrintError,
 //         );
+//         // fall through to the normal encode/print/fallback chain below,
+//         // in case the image itself was malformed - the raw text fallback
+//         // at the end will at least surface the issue instead of crashing
+//         // the whole receipt.
 //       }
+//     }
 
-//       // connectPrinter is the ONLY connect API - it connects AND returns the
-//       // connected ThermalPrinterDevice in one call.
-//       const printerDevice = await ReactNativePosPrinter.connectPrinter(deviceAddress, {
-//         type: deviceInfo.type || 'BLUETOOTH',
+//     // ---- Primary: native hardware QR command ----
+//     // The printer's own firmware draws QR modules directly at native
+//     // print-head resolution - there's no client-side bitmap resize,
+//     // threshold, or dithering step to degrade fine module edges the way
+//     // pushing a rasterized image through printImage() can (see below).
+//     // This used to fail here because the content reaching it was wrong
+//     // (an entire rendered PNG data-URL, not the raw signed payload) -
+//     // that's fixed upstream now, so native QR gets first try.
+//     try {
+//       const qrSize = Math.min(Math.max(Number(node.moduleScale) || 6, 1), 16);
+
+//       const qrAlign =
+//         node.align === 'center'
+//           ? 'CENTER'
+//           : node.align === 'right'
+//             ? 'RIGHT'
+//             : 'LEFT';
+
+//       const allowedErrorLevels = ['L', 'M', 'Q', 'H'];
+//       const requestedErrorLevel = String(node.errorLevel || 'M').toUpperCase();
+//       const errorLevel = allowedErrorLevels.includes(requestedErrorLevel)
+//         ? requestedErrorLevel
+//         : 'M';
+
+//       await ReactNativePosPrinter.printQRCode(qrData, {
+//         align: qrAlign,
+//         size: qrSize,
+//         errorLevel,
 //       });
 
-//       this.currentPrinter = printerDevice;
-//       this.connectionState = 'connected';
+//       await ReactNativePosPrinter.newLine(1);
 
-//       const savedDevice = {
-//         name: deviceInfo.name || 'Unknown',
-//         address: deviceAddress,
-//         type: deviceInfo.type || 'BLUETOOTH',
-//       };
-
-//       await PrinterStorage.saveDefaultPrinter(savedDevice);
-//       await PrinterStorage.saveLastPrinter(savedDevice);
-
-//       this.notifyListeners();
-//       console.log(`Connected to ${deviceInfo.name}`);
-//       return true;
-//     } catch (error) {
-//       this.connectionState = 'error';
-//       this.notifyListeners();
-//       console.error('Connection error:', error);
-//       throw error;
+//       return;
+//     } catch (nativeError) {
+//       console.warn(
+//         '[PrinterService] Native printQRCode failed, falling back to a rendered bitmap image:',
+//         nativeError,
+//       );
 //     }
-//   }
 
-//   async disconnect() {
+//     // ---- Fallback: render our own bitmap and printImage() it ----
+//     // Used only when native QR isn't supported by this printer/library.
+//     // NOTE: some printImage() implementations resize/dither/threshold
+//     // whatever bitmap they're given, which can blur small, precisely-
+//     // aligned QR modules enough to break scanning even though the
+//     // source bitmap itself decodes perfectly (verified independently -
+//     // see QRCodeGenerator). Bigger modules give more headroom against
+//     // that, hence the larger default moduleScale/floor here versus what
+//     // might seem necessary from the bitmap alone.
 //     try {
-//       await ReactNativePosPrinter.disconnectPrinter();
-//     } catch (error) {
-//       console.warn('Error during disconnect:', error);
-//     }
-//     this.currentPrinter = null;
-//     this.connectionState = 'disconnected';
-//     this.notifyListeners();
-//     console.log('Disconnected from printer.');
-//   }
+//       const image = generateQRCodeImage(qrData, {
+//         errorCorrectionLevel: node.errorLevel || 'M',
+//         moduleScale: Number(node.moduleScale) || 6,
+//         minModuleScale: 5,
+//         quietZoneModules: 4,
+//         maxWidthPx,
+//         fullWidthPx: dotWidth,
+//       });
 
-//   async autoConnect() {
-//     try {
-//       const autoConnectEnabled = await PrinterStorage.getAutoConnect();
-//       if (!autoConnectEnabled) return false;
-
-//       const defaultPrinter = await PrinterStorage.getDefaultPrinter();
-//       if (!defaultPrinter?.address) return false;
-
-//       return await this.connectToPrinter(defaultPrinter);
-//     } catch (error) {
-//       return false;
-//     }
-//   }
-
-//   // ============= Status =============
-//   isConnected() {
-//     return this.connectionState === 'connected' && this.currentPrinter !== null;
-//   }
-
-//   getCurrentDevice() {
-//     if (!this.currentPrinter) return null;
-//     return {
-//       name: this.currentPrinter.getName?.() || this.currentPrinter.name || 'Unknown',
-//       address: this.currentPrinter.getAddress?.() || this.currentPrinter.address,
-//       type: this.currentPrinter.getType?.() || this.currentPrinter.type,
-//     };
-//   }
-
-//   getConnectionStatus() {
-//     return {
-//       connected: this.isConnected(),
-//       state: this.connectionState,
-//       device: this.getCurrentDevice(),
-//     };
-//   }
-
-//   addConnectionListener(listener) {
-//     this.connectionListeners.push(listener);
-//     try {
-//       listener(this.getConnectionStatus());
-//     } catch (e) {
-//       console.warn('Error in connection listener:', e);
-//     }
-//     return () => {
-//       this.connectionListeners = this.connectionListeners.filter((l) => l !== listener);
-//     };
-//   }
-
-//   notifyListeners() {
-//     const status = this.getConnectionStatus();
-//     this.connectionListeners.forEach((listener) => {
-//       try {
-//         listener(status);
-//       } catch (error) {
-//         console.error('Error notifying listener:', error);
+//       if (!image) {
+//         throw new Error('QR bitmap generation returned no image.');
 //       }
-//     });
-//   }
 
-//   // ============= Settings passthrough (PrinterStorage) =============
-//   // BluetoothPrinterModal.jsx calls these directly on PrinterService.
-//   async getPaperSize() { return PrinterStorage.getPaperSize(); }
-//   async setPaperSize(size) { return PrinterStorage.savePaperSize(size); }
-//   async getAutoConnect() { return PrinterStorage.getAutoConnect(); }
-//   async setAutoConnect(enabled) { return PrinterStorage.saveAutoConnect(enabled); }
-//   async getPrintCopies() { return PrinterStorage.getPrintCopies(); }
-//   async setPrintCopies(copies) { return PrinterStorage.savePrintCopies(copies); }
+//       console.log('[PrinterService] Printing QR as image:', {
+//         length: qrData.length,
+//         widthPx: image.widthPx,
+//         moduleCount: image.moduleCount,
+//         scale: image.scale,
+//       });
 
-//   async getPaperWidth() {
-//     const paperSize = await this.getPaperSize();
-//     return paperSize === '80mm' ? 48 : 32;
-//   }
+//       await ReactNativePosPrinter.printImage(image.base64, {
+//         align: 'CENTER',
+//         width: image.widthPx,
+//       });
 
-//   // ============= Printing =============
-//   async printReceipt(receiptData, receiptType) {
-//     if (!this.isConnected()) {
-//       throw new Error('No printer connected');
+//       await ReactNativePosPrinter.newLine(1);
+
+//       return;
+//     } catch (imageError) {
+//       console.warn(
+//         '[PrinterService] QR bitmap image print also failed, falling back to text:',
+//         imageError,
+//       );
 //     }
 
-//     const printer = this.currentPrinter;
-//     const copies = (await this.getPrintCopies()) || 1;
-//     const deviceName = this.getCurrentDevice()?.name || '';
+//     // ---- Last resort: raw text, so the receipt isn't silently missing this ----
+//     try {
+//       const width = await this.getPaperWidth();
+//       const wrapped = this._wrapPlainText(qrData, width);
 
-//     ReceiptFormatter.detectPrinterType(deviceName);
-//     ReceiptFormatter.setPaperSize(await this.getPaperSize());
-//     const nodes = ReceiptFormatter.formatReceipt(receiptData, receiptType, deviceName);
+//       await ReactNativePosPrinter.printText(
+//         `${'(scan unavailable - use link below)'}\n`,
+//         this._normalStyle('CENTER'),
+//       );
 
-//     for (let i = 0; i < copies; i++) {
-//       await this._printNodes(printer, nodes);
-//       console.log(`Printed copy ${i + 1} of ${copies}`);
-//     }
-//     return { success: true };
-//   }
-
-//   async printSalesReceipt(receiptData) { return this.printReceipt(receiptData, 'SALES'); }
-//   async printPaymentReceipt(receiptData) { return this.printReceipt(receiptData, 'PAYMENT'); }
-//   async printReleaseReceipt(receiptData) { return this.printReceipt(receiptData, 'RELEASE'); }
-
-//   async _printNodes(printer, nodes) {
-//     if (!nodes || nodes.length === 0) return;
-
-//     // NOTE: deliberately using the static ReactNativePosPrinter.* methods,
-//     // not printer.printText()/printQRCode()/cutPaper() (instance methods).
-//     // The instance's internal `connected` flag is set once from
-//     // getDeviceList()'s "connected" field, which the native Android code
-//     // never actually populates for paired devices - so it's always false on
-//     // a freshly connected ThermalPrinterDevice, and instance methods throw
-//     // "Device not connected" regardless of the real (working) socket state.
-//     // The static methods check the real native connection instead.
-//     for (const node of nodes) {
-//       switch (node.type) {
-//         case 'text': {
-//           const style = this._convertStyle(node.style);
-//           await ReactNativePosPrinter.printText(node.content + '\n', style);
-//           break;
-//         }
-//         case 'line': {
-//           const width = await this.getPaperWidth();
-//           const lineStr = node.style === 'dashed' ? '-'.repeat(width) : '='.repeat(width);
-//           await ReactNativePosPrinter.printText(lineStr + '\n');
-//           break;
-//         }
-//         case 'qr': {
-//           await ReactNativePosPrinter.printQRCode(node.content, {
-//             align: node.align === 'center' ? 'CENTER' : 'LEFT',
-//             size: node.size || 4,
-//             errorLevel: 'M',
-//           });
-//           break;
-//         }
-//         case 'feed': {
-//           await ReactNativePosPrinter.newLine(Math.min(node.lines || 3, 10));
-//           break;
-//         }
-//         case 'cut': {
-//           await ReactNativePosPrinter.cutPaper();
-//           break;
-//         }
-//         default:
-//           console.warn('Unsupported node type:', node.type);
+//       for (const line of wrapped) {
+//         await ReactNativePosPrinter.printText(
+//           `${line}\n`,
+//           this._normalStyle('CENTER'),
+//         );
 //       }
+//     } catch (textError) {
+//       console.error(
+//         '[PrinterService] All QR print fallbacks failed:',
+//         textError,
+//       );
 //     }
+//   }
+
+//   _wrapPlainText(text, width) {
+//     const value = String(text ?? '');
+//     const lines = [];
+
+//     for (let i = 0; i < value.length; i += width) {
+//       lines.push(value.substring(i, i + width));
+//     }
+
+//     return lines.length ? lines : [''];
+//   }
+
+//   // ============================================================
+//   // TEXT STYLE
+//   // ============================================================
+
+//   _normalStyle(align = 'LEFT') {
+//     return {
+//       align,
+//       size: 8,
+//       bold: false,
+//       underline: false,
+//     };
 //   }
 
 //   _convertStyle(style = {}) {
-//     const alignMap = { left: 'LEFT', center: 'CENTER', right: 'RIGHT' };
-//     const sizeMap = { 1: 'NORMAL', 2: 'LARGE', 3: 'XLARGE' };
+//     const alignMap = {
+//       left: 'LEFT',
+//       center: 'CENTER',
+//       right: 'RIGHT',
+//     };
+
+//     /**
+//      * IMPORTANT:
+//      * Physical size remains fixed for all receipt text so that
+//      * fixed-width formatting remains predictable. Bold is used for
+//      * emphasis instead of a larger font.
+//      */
+//     const sizeMap = {
+//       [TEXT_SIZE.NORMAL]: 8,
+//       [TEXT_SIZE.EMPHASIZED]: 10,
+//     };
+
+//     const logicalSize = Number(style.size) || TEXT_SIZE.NORMAL;
 
 //     return {
 //       align: alignMap[style.align] || 'LEFT',
-//       size: sizeMap[style.size] || 'NORMAL',
-//       bold: !!style.bold,
-//       underline: !!style.underline,
+//       size: sizeMap[logicalSize] || 10,
+//       bold: Boolean(style.bold),
+//       underline: Boolean(style.underline),
 //     };
 //   }
 
-//   // ============= Test / diagnostics =============
-//   // Minimal, dependency-free raw ESC/POS test page - useful to confirm the
-//   // transport itself works independent of ReceiptFormatter/QR.
+//   // ============================================================
+//   // TEST PRINT
+//   // ============================================================
+
 //   async testPrint() {
 //     if (!this.isConnected()) {
-//       throw new Error('No printer connected');
+//       throw new Error('No printer connected.');
 //     }
-//     const bytes = [
-//       ...ESCPOSCommands.INIT,
-//       ...ESCPOSCommands.ALIGN_CENTER,
-//       ...ESCPOSCommands.BOLD_ON,
-//       ...'TEST PRINT'.split('').map((c) => c.charCodeAt(0)),
-//       ...ESCPOSCommands.LINE_FEED,
-//       ...ESCPOSCommands.BOLD_OFF,
-//       ...ESCPOSCommands.ALIGN_LEFT,
-//       ...'Line 1: Normal text'.split('').map((c) => c.charCodeAt(0)),
-//       ...ESCPOSCommands.LINE_FEED,
-//       ...ESCPOSCommands.LINE_FEED,
-//       ...ESCPOSCommands.LINE_FEED,
-//       ...ESCPOSCommands.CUT_PAPER,
-//     ];
-//     console.log('Sending test print (raw ESC/POS)...');
-//     await ReactNativePosPrinter.sendRawCommand(bytes);
-//     return { success: true };
-//   }
 
-//   // Legacy manual-bytes path some UI still calls directly - builds a plain
-//   // text receipt without going through ReceiptFormatter, useful as a
-//   // last-resort fallback if node-based printing ever misbehaves.
-//   async printPureEscPos(receiptData, receiptType) {
-//     if (!this.isConnected()) {
-//       throw new Error('No printer connected');
-//     }
 //     const width = await this.getPaperWidth();
-//     const bytes = [...ESCPOSCommands.INIT];
-//     const pushText = (text) => bytes.push(...text.split('').map((c) => c.charCodeAt(0) & 0x7F));
 
-//     if (receiptData?.store?.name) {
-//       bytes.push(...ESCPOSCommands.ALIGN_CENTER, ...ESCPOSCommands.BOLD_ON);
-//       pushText(receiptData.store.name);
-//       bytes.push(...ESCPOSCommands.LINE_FEED, ...ESCPOSCommands.BOLD_OFF, ...ESCPOSCommands.ALIGN_LEFT);
-//     }
-//     bytes.push(...'-'.repeat(width).split('').map((c) => c.charCodeAt(0)), ...ESCPOSCommands.LINE_FEED);
-//     pushText(`${receiptType || 'RECEIPT'}`);
-//     bytes.push(...ESCPOSCommands.LINE_FEED);
-//     if (receiptData?.summary?.totalAmount !== undefined) {
-//       pushText(`TOTAL: N${Number(receiptData.summary.totalAmount).toFixed(2)}`);
-//       bytes.push(...ESCPOSCommands.LINE_FEED);
-//     }
-//     bytes.push(...ESCPOSCommands.LINE_FEED, ...ESCPOSCommands.LINE_FEED, ...ESCPOSCommands.LINE_FEED, ...ESCPOSCommands.CUT_PAPER);
+//     await ReactNativePosPrinter.printText(
+//       `${'='.repeat(width)}\n`,
+//       this._normalStyle('LEFT'),
+//     );
 
-//     await ReactNativePosPrinter.sendRawCommand(bytes);
+//     await ReactNativePosPrinter.printText('PRINTER TEST\n', {
+//       ...this._normalStyle('CENTER'),
+//       bold: true,
+//       size: 10,
+//     });
+
+//     await ReactNativePosPrinter.printText(
+//       'Normal text size\n',
+//       this._normalStyle('LEFT'),
+//     );
+
+//     await ReactNativePosPrinter.printText(
+//       'This should be normal size.\n',
+//       this._normalStyle('LEFT'),
+//     );
+
+//     await ReactNativePosPrinter.printText(
+//       `${'='.repeat(width)}\n`,
+//       this._normalStyle('LEFT'),
+//     );
+
+//     await ReactNativePosPrinter.newLine(3);
+//     await ReactNativePosPrinter.cutPaper();
+
 //     return { success: true };
 //   }
+
+//   /** Isolated QR-only test print, useful for verifying the QR fix on-device. */
+//   async testPrintQRCode() {
+//     if (!this.isConnected()) {
+//       throw new Error('No printer connected.');
+//     }
+
+//     const paperSize = await this.getPaperSize();
+//     ReceiptFormatter.setPaperSize(paperSize);
+
+//     await this._printQRNode({
+//       content: 'https://example.com/printer-qr-test',
+//       align: 'center',
+//       errorLevel: 'M',
+//       moduleScale: paperSize === '80mm' ? 8 : 6,
+//     });
+
+//     await ReactNativePosPrinter.newLine(3);
+//     await ReactNativePosPrinter.cutPaper();
+
+//     return { success: true };
+//   }
+
+//   // ============================================================
+//   // DIAGNOSTIC PRINT
+//   // ============================================================
 
 //   async diagnosticPrint() {
 //     const results = [];
+
 //     try {
 //       await this.testPrint();
 //       results.push({ method: 'testPrint', success: true });
-//     } catch (e) {
-//       results.push({ method: 'testPrint', success: false, error: e.message });
+//     } catch (error) {
+//       results.push({
+//         method: 'testPrint',
+//         success: false,
+//         error: error?.message || String(error),
+//       });
 //     }
+
 //     try {
-//       await this.printReceipt(
-//         { store: { name: 'DIAGNOSTIC' }, summary: { totalAmount: 0 } },
-//         'SALES',
-//       );
-//       results.push({ method: 'printReceipt', success: true });
-//     } catch (e) {
-//       results.push({ method: 'printReceipt', success: false, error: e.message });
+//       await this.testPrintQRCode();
+//       results.push({ method: 'testPrintQRCode', success: true });
+//     } catch (error) {
+//       results.push({
+//         method: 'testPrintQRCode',
+//         success: false,
+//         error: error?.message || String(error),
+//       });
 //     }
-//     console.log('Diagnostic results:', results);
+
+//     try {
+//       const diagnosticData = {
+//         store: {
+//           name: 'DIAGNOSTIC STORE',
+//           address: 'Printer Test Address',
+//           phone: '08000000000',
+//         },
+//         transaction: {
+//           number: 'TEST-0001',
+//           createdAt: new Date(),
+//           status: 'COMPLETED',
+//         },
+//         items: [
+//           {
+//             name: 'Test Product',
+//             quantity: 2,
+//             unitPrice: 1500,
+//             totalPrice: 3000,
+//           },
+//         ],
+//         summary: {
+//           subtotal: 3000,
+//           totalAmount: 3000,
+//           amountPaid: 5000,
+//           changeAmount: 2000,
+//         },
+//         staff: { salesAttendant: { name: 'Test User' } },
+//         qrCode: 'https://example.com/receipt/TEST-0001',
+//       };
+
+//       await this.printReceipt(diagnosticData, 'SALES');
+
+//       results.push({ method: 'formattedReceipt', success: true });
+//     } catch (error) {
+//       results.push({
+//         method: 'formattedReceipt',
+//         success: false,
+//         error: error?.message || String(error),
+//       });
+//     }
+
+//     console.log('[PrinterService] Diagnostics:', results);
+
 //     return results;
 //   }
 // }
 
 // export default PrinterService.getInstance();
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -944,54 +937,78 @@
 
 
 // services/printer/PrinterService.js
-/**
- * Talks directly to react-native-thermal-pos-printer's real, verified API
- * (https://github.com/CoFixer/react-native-thermal-pos-printer). No
- * BluetoothManager/EscPosPrinter layer needed - this library already
- * provides connection management + native text/QR/barcode/raw printing.
- *
- * IMPORTANT - bugs fixed from the previous version of this file:
- *
- * 1. `ReactNativePosPrinter.discoverDevices(timeout)` and
- *    `ReactNativePosPrinter.getDevice(address)` do NOT exist in this
- *    library (verified against the published source on npm/GitHub). The
- *    only device-listing method is `getDeviceList()` (bonded/paired devices
- *    only - no live discovery scan), and connecting is done with the static
- *    `connectPrinter(address, options)`, not by fetching a device object
- *    first. Calling either nonexistent method throws
- *    "... is not a function", which is exactly the error you were seeing.
- *
- * 2. `requestBluetoothPermissions` is an internal utility in this package,
- *    NOT re-exported from its public entry point - importing it from
- *    'react-native-thermal-pos-printer' resolves to undefined. Permission
- *    requesting is implemented locally here instead.
- *
- * 3. PrinterService was missing several methods that
- *    BluetoothPrinterModal.jsx actually calls (getPaperSize, setPaperSize,
- *    getAutoConnect, setAutoConnect, printSalesReceipt, printPaymentReceipt,
- *    printReleaseReceipt, printPureEscPos, testPrint, diagnosticPrint) -
- *    calling any of them threw "is not a function". All are implemented
- *    below.
- *
- * 4. getPairedDevices()/scanForDevices() now validate that each device has a
- *    real `address` before returning it, instead of silently passing through
- *    a malformed {name: undefined, address: undefined} entry that fails
- *    later at connect time with "No Bluetooth address found."
- */
+
 import { Platform, PermissionsAndroid } from 'react-native';
-import ReactNativePosPrinter, { ESCPOSCommands } from 'react-native-thermal-pos-printer';
-import ReceiptFormatter, { PRINTER_TYPES } from './ReceiptFormatter';
+
+import ReactNativePosPrinter from 'react-native-thermal-pos-printer';
+
+import ReceiptFormatter, { TEXT_SIZE } from './ReceiptFormatter';
+
 import PrinterStorage from './PrinterStorage';
 
+import { generateQRCodeImage } from './QRCodeGenerator';
+
+/**
+ * PrinterService
+ *
+ * Responsible for:
+ * - Bluetooth permissions
+ * - printer initialization
+ * - device discovery
+ * - connection
+ * - disconnection
+ * - printer settings
+ * - receipt formatting orchestration
+ * - executing receipt nodes
+ * - test printing
+ *
+ * ReceiptFormatter is responsible only for creating nodes.
+ *
+ * QR CODE PRINTING
+ * -----------------
+ * QR codes are printed via a self-rendered bitmap (QRCodeGenerator +
+ * printImage()) first, with the library's native printQRCode() as a
+ * fallback, and wrapped raw text as a last resort.
+ *
+ * This order has changed twice, each time based on evidence from
+ * actual hardware (this can only be reasoned about and simulated
+ * against mocks locally - the real printer is the only ground truth):
+ *   1. Originally bitmap-first, because native printQRCode appeared to
+ *      dump a wall of raw text instead of a QR code. Root cause: a
+ *      content bug elsewhere in the app was handing it an entire
+ *      rendered PNG data-URL (thousands of characters) instead of the
+ *      actual short signed payload, overflowing QR capacity.
+ *   2. After that content bug was fixed, switched to native-first,
+ *      reasoning that hardware-native rendering avoids whatever
+ *      resize/dither a printer library might apply to a bitmap image
+ *      - and indeed, a bitmap QR that decoded perfectly in isolation
+ *      (verified independently) still failed to scan once printed.
+ *   3. Real-world testing then showed native printQRCode on this
+ *      printer/library resolves successfully as a JS promise while
+ *      producing NO physical output at all - a silent no-op that's
+ *      worse than an outright failure, since nothing signals the
+ *      fallback chain to continue. Reverted to bitmap-first: it's the
+ *      one path confirmed to actually produce visible printed output
+ *      on this hardware. Its scannability (the step 2 problem) was
+ *      separately hardened - larger modules, a scannability floor
+ *      that won't shrink below a safe size to fit paper width (see
+ *      QRCodeGenerator) - rather than abandoning it.
+ * Native printQRCode is kept as a fallback (not removed) since it may
+ * still work correctly on other printers/libraries.
+ */
 class PrinterService {
   static instance = null;
 
   constructor() {
-    if (PrinterService.instance) return PrinterService.instance;
-    this.currentPrinter = null; // ThermalPrinterDevice instance once connected
+    if (PrinterService.instance) {
+      return PrinterService.instance;
+    }
+
+    this.currentPrinter = null;
     this.connectionState = 'disconnected';
     this.connectionListeners = [];
     this.isInitialized = false;
+
     PrinterService.instance = this;
   }
 
@@ -999,136 +1016,169 @@ class PrinterService {
     if (!PrinterService.instance) {
       PrinterService.instance = new PrinterService();
     }
+
     return PrinterService.instance;
   }
 
-  // ============= Permissions =============
+  // ============================================================
+  // PERMISSIONS
+  // ============================================================
+
   async requestPermissions() {
-    if (Platform.OS !== 'android') return true;
+    if (Platform.OS !== 'android') {
+      return true;
+    }
+
     try {
-      const permissions = Platform.Version >= 31
-        ? [PermissionsAndroid.PERMISSIONS.BLUETOOTH_SCAN, PermissionsAndroid.PERMISSIONS.BLUETOOTH_CONNECT]
-        : [PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION];
+      const permissions =
+        Platform.Version >= 31
+          ? [
+              PermissionsAndroid.PERMISSIONS.BLUETOOTH_SCAN,
+              PermissionsAndroid.PERMISSIONS.BLUETOOTH_CONNECT,
+            ]
+          : [PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION];
 
       const result = await PermissionsAndroid.requestMultiple(permissions);
-      return permissions.every((p) => result[p] === PermissionsAndroid.RESULTS.GRANTED);
+
+      return permissions.every(
+        permission =>
+          result[permission] === PermissionsAndroid.RESULTS.GRANTED,
+      );
     } catch (error) {
-      console.error('Permission error:', error);
+      console.error('Bluetooth permission error:', error);
       return false;
     }
   }
 
-  // ============= Lifecycle =============
+  // ============================================================
+  // INITIALIZATION
+  // ============================================================
+
   async initialize() {
-    if (this.isInitialized) return true;
+    if (this.isInitialized) {
+      return true;
+    }
+
     try {
-      const hasPermission = await this.requestPermissions();
-      if (!hasPermission) {
-        console.warn('Bluetooth permission denied - device list will likely be empty');
+      const permissionGranted = await this.requestPermissions();
+
+      if (!permissionGranted) {
+        console.warn('Bluetooth permission was not granted.');
       }
 
       await ReactNativePosPrinter.init();
+
       this.isInitialized = true;
-      console.log('PrinterService initialized.');
+
+      console.log('[PrinterService] Initialized.');
+
       await this.autoConnect();
+
       return true;
     } catch (error) {
-      console.error('Failed to initialize PrinterService:', error);
+      console.error('[PrinterService] Initialization failed:', error);
+      this.isInitialized = false;
       return false;
     }
   }
 
-  // ============= Discovery =============
-  // This library only lists bonded/paired devices (no live discovery scan) -
-  // pair the printer via Android Bluetooth settings first. Any entry missing
-  // a usable address is dropped rather than handed to the UI, since it can
-  // never be connected to anyway.
+  // ============================================================
+  // DEVICE DISCOVERY
+  // ============================================================
+
+  // This library only lists bonded/paired devices (no live discovery
+  // scan) - pair the printer via Android Bluetooth settings first.
+  // Any entry missing a usable address is dropped, since it can never
+  // be connected to anyway.
   async getPairedDevices() {
     try {
+      if (!this.isInitialized) {
+        await this.initialize();
+      }
+
       const devices = await ReactNativePosPrinter.getDeviceList();
 
-      if (!devices || !Array.isArray(devices)) {
-        console.warn('getDeviceList returned no devices');
+      if (!Array.isArray(devices)) {
+        console.warn('[PrinterService] No printer devices returned.');
         return [];
       }
 
-      const mapped = devices
-        .map((device) => ({
-          name: device.name || device.getName?.() || 'Unknown Device',
-          address: device.address || device.getAddress?.(),
-          type: device.type || device.getType?.() || 'BLUETOOTH',
-          connected: device.connected || false,
-          rssi: device.rssi,
-          batteryLevel: device.batteryLevel,
+      return devices
+        .map(device => ({
+          name: device?.name || device?.getName?.() || 'Unknown Device',
+          address: device?.address || device?.getAddress?.(),
+          type: device?.type || device?.getType?.() || 'BLUETOOTH',
+          connected: Boolean(device?.connected),
+          rssi: device?.rssi,
+          batteryLevel: device?.batteryLevel,
         }))
-        .filter((d) => {
-          if (!d.address) {
-            console.warn('Dropping paired device with no address:', d);
+        .filter(device => {
+          if (!device.address) {
+            console.warn(
+              '[PrinterService] Ignoring printer without Bluetooth address:',
+              device,
+            );
             return false;
           }
           return true;
         });
-
-      if (mapped.length === 0) {
-        console.warn('No usable paired printers found. Pair the printer in Android Bluetooth settings first.');
-      }
-
-      return mapped;
     } catch (error) {
-      console.error('Failed to get paired devices:', error);
+      console.error('[PrinterService] Failed to get paired printers:', error);
       return [];
     }
   }
 
-  // No live discovery scan exists in this library - scanForDevices is just
-  // an alias so existing UI code (a "scan" button) keeps working.
   async scanForDevices() {
     return this.getPairedDevices();
   }
 
-  // ============= Connection =============
+  // ============================================================
+  // CONNECTION
+  // ============================================================
+
   async connectToPrinter(deviceInfo) {
     this.connectionState = 'connecting';
     this.notifyListeners();
 
     try {
-      console.log('Selected printer:', deviceInfo);
-
-      const deviceAddress = deviceInfo?.address;
-      if (!deviceAddress) {
-        throw new Error(
-          `No Bluetooth address found.\nDevice: ${JSON.stringify(deviceInfo, null, 2)}\n` +
-          `This usually means the device came from a malformed list entry - ` +
-          `reopen the printer list and make sure the printer is paired in ` +
-          `Android Bluetooth settings.`
-        );
+      if (!deviceInfo?.address) {
+        throw new Error('The selected printer has no Bluetooth address.');
       }
 
-      // connectPrinter is the ONLY connect API - it connects AND returns the
-      // connected ThermalPrinterDevice in one call.
-      const printerDevice = await ReactNativePosPrinter.connectPrinter(deviceAddress, {
-        type: deviceInfo.type || 'BLUETOOTH',
-      });
+      if (!this.isInitialized) {
+        await this.initialize();
+      }
 
-      this.currentPrinter = printerDevice;
+      console.log('[PrinterService] Connecting to:', deviceInfo);
+
+      const printer = await ReactNativePosPrinter.connectPrinter(
+        deviceInfo.address,
+        { type: deviceInfo.type || 'BLUETOOTH' },
+      );
+
+      this.currentPrinter = printer;
       this.connectionState = 'connected';
 
-      const savedDevice = {
-        name: deviceInfo.name || 'Unknown',
-        address: deviceAddress,
+      const savedPrinter = {
+        name: deviceInfo.name || 'Unknown Printer',
+        address: deviceInfo.address,
         type: deviceInfo.type || 'BLUETOOTH',
       };
 
-      await PrinterStorage.saveDefaultPrinter(savedDevice);
-      await PrinterStorage.saveLastPrinter(savedDevice);
+      await PrinterStorage.saveDefaultPrinter(savedPrinter);
+      await PrinterStorage.saveLastPrinter(savedPrinter);
 
       this.notifyListeners();
-      console.log(`Connected to ${deviceInfo.name}`);
+
+      console.log(`[PrinterService] Connected to ${savedPrinter.name}`);
+
       return true;
     } catch (error) {
+      this.currentPrinter = null;
       this.connectionState = 'error';
       this.notifyListeners();
-      console.error('Connection error:', error);
+
+      console.error('[PrinterService] Printer connection failed:', error);
       throw error;
     }
   }
@@ -1137,38 +1187,57 @@ class PrinterService {
     try {
       await ReactNativePosPrinter.disconnectPrinter();
     } catch (error) {
-      console.warn('Error during disconnect:', error);
+      console.warn('[PrinterService] Disconnect warning:', error);
     }
+
     this.currentPrinter = null;
     this.connectionState = 'disconnected';
     this.notifyListeners();
-    console.log('Disconnected from printer.');
   }
 
   async autoConnect() {
     try {
-      const autoConnectEnabled = await PrinterStorage.getAutoConnect();
-      if (!autoConnectEnabled) return false;
+      const enabled = await PrinterStorage.getAutoConnect();
 
-      const defaultPrinter = await PrinterStorage.getDefaultPrinter();
-      if (!defaultPrinter?.address) return false;
+      if (!enabled) {
+        return false;
+      }
 
-      return await this.connectToPrinter(defaultPrinter);
+      const printer = await PrinterStorage.getDefaultPrinter();
+
+      if (!printer?.address) {
+        return false;
+      }
+
+      return this.connectToPrinter(printer);
     } catch (error) {
+      console.warn('[PrinterService] Auto-connect failed:', error);
       return false;
     }
   }
 
-  // ============= Status =============
+  // ============================================================
+  // STATUS
+  // ============================================================
+
   isConnected() {
-    return this.connectionState === 'connected' && this.currentPrinter !== null;
+    return (
+      this.connectionState === 'connected' && this.currentPrinter !== null
+    );
   }
 
   getCurrentDevice() {
-    if (!this.currentPrinter) return null;
+    if (!this.currentPrinter) {
+      return null;
+    }
+
     return {
-      name: this.currentPrinter.getName?.() || this.currentPrinter.name || 'Unknown',
-      address: this.currentPrinter.getAddress?.() || this.currentPrinter.address,
+      name:
+        this.currentPrinter.getName?.() ||
+        this.currentPrinter.name ||
+        'Unknown Printer',
+      address:
+        this.currentPrinter.getAddress?.() || this.currentPrinter.address,
       type: this.currentPrinter.getType?.() || this.currentPrinter.type,
     };
   }
@@ -1182,202 +1251,630 @@ class PrinterService {
   }
 
   addConnectionListener(listener) {
+    if (typeof listener !== 'function') {
+      return () => {};
+    }
+
     this.connectionListeners.push(listener);
+
     try {
       listener(this.getConnectionStatus());
-    } catch (e) {
-      console.warn('Error in connection listener:', e);
+    } catch (error) {
+      console.warn('[PrinterService] Connection listener error:', error);
     }
+
     return () => {
-      this.connectionListeners = this.connectionListeners.filter((l) => l !== listener);
+      this.connectionListeners = this.connectionListeners.filter(
+        item => item !== listener,
+      );
     };
   }
 
   notifyListeners() {
     const status = this.getConnectionStatus();
-    this.connectionListeners.forEach((listener) => {
+
+    this.connectionListeners.forEach(listener => {
       try {
         listener(status);
       } catch (error) {
-        console.error('Error notifying listener:', error);
+        console.warn('[PrinterService] Connection listener error:', error);
       }
     });
   }
 
-  // ============= Settings passthrough (PrinterStorage) =============
-  // BluetoothPrinterModal.jsx calls these directly on PrinterService.
-  async getPaperSize() { return PrinterStorage.getPaperSize(); }
-  async setPaperSize(size) { return PrinterStorage.savePaperSize(size); }
-  async getAutoConnect() { return PrinterStorage.getAutoConnect(); }
-  async setAutoConnect(enabled) { return PrinterStorage.saveAutoConnect(enabled); }
-  async getPrintCopies() { return PrinterStorage.getPrintCopies(); }
-  async setPrintCopies(copies) { return PrinterStorage.savePrintCopies(copies); }
+  // ============================================================
+  // SETTINGS
+  // ============================================================
+
+  async getPaperSize() {
+    return PrinterStorage.getPaperSize();
+  }
+
+  async setPaperSize(size) {
+    const normalized = size === '80mm' ? '80mm' : '58mm';
+    return PrinterStorage.savePaperSize(normalized);
+  }
+
+  async getAutoConnect() {
+    return PrinterStorage.getAutoConnect();
+  }
+
+  async setAutoConnect(enabled) {
+    return PrinterStorage.saveAutoConnect(Boolean(enabled));
+  }
+
+  async getPrintCopies() {
+    return PrinterStorage.getPrintCopies();
+  }
+
+  async setPrintCopies(copies) {
+    const parsed = Number.parseInt(copies, 10);
+    const count = Number.isFinite(parsed) ? Math.min(Math.max(parsed, 1), 10) : 1;
+    return PrinterStorage.savePrintCopies(count);
+  }
 
   async getPaperWidth() {
-    const paperSize = await this.getPaperSize();
-    return paperSize === '80mm' ? 48 : 32;
+    const size = await this.getPaperSize();
+    return size === '80mm' ? 48 : 32;
   }
 
-  // ============= Printing =============
-  async printReceipt(receiptData, receiptType) {
+  // ============================================================
+  // RECEIPT PRINTING
+  // ============================================================
+
+  async printReceipt(receiptData, receiptType = 'SALES') {
     if (!this.isConnected()) {
-      throw new Error('No printer connected');
+      throw new Error('No printer connected.');
     }
 
-    const printer = this.currentPrinter;
-    const copies = (await this.getPrintCopies()) || 1;
+    const copies = Math.max(1, Number((await this.getPrintCopies()) || 1));
     const deviceName = this.getCurrentDevice()?.name || '';
+    const paperSize = await this.getPaperSize();
 
+    // Configure formatter.
     ReceiptFormatter.detectPrinterType(deviceName);
-    ReceiptFormatter.setPaperSize(await this.getPaperSize());
-    const nodes = ReceiptFormatter.formatReceipt(receiptData, receiptType, deviceName);
+    ReceiptFormatter.setPaperSize(paperSize);
 
-    for (let i = 0; i < copies; i++) {
-      await this._printNodes(printer, nodes);
-      console.log(`Printed copy ${i + 1} of ${copies}`);
+    const nodes = ReceiptFormatter.formatReceipt(
+      receiptData || {},
+      receiptType,
+      deviceName,
+    );
+
+    console.log('[PrinterService] Receipt generated:', {
+      receiptType,
+      paperSize,
+      width: ReceiptFormatter.getWidth(),
+      nodeCount: nodes.length,
+      printer: deviceName,
+    });
+
+    for (let copy = 0; copy < copies; copy++) {
+      await this._printNodes(nodes);
+      console.log(`[PrinterService] Receipt copy ${copy + 1}/${copies} printed.`);
     }
-    return { success: true };
+
+    return {
+      success: true,
+      copies,
+      paperSize,
+      nodeCount: nodes.length,
+    };
   }
 
-  async printSalesReceipt(receiptData) { return this.printReceipt(receiptData, 'SALES'); }
-  async printPaymentReceipt(receiptData) { return this.printReceipt(receiptData, 'PAYMENT'); }
-  async printReleaseReceipt(receiptData) { return this.printReceipt(receiptData, 'RELEASE'); }
+  async printSalesReceipt(data) {
+    return this.printReceipt(data, 'SALES');
+  }
 
-  async _printNodes(printer, nodes) {
-    if (!nodes || nodes.length === 0) return;
+  async printPaymentReceipt(data) {
+    return this.printReceipt(data, 'PAYMENT');
+  }
 
-    // NOTE: deliberately using the static ReactNativePosPrinter.* methods,
-    // not printer.printText()/printQRCode()/cutPaper() (instance methods).
-    // The instance's internal `connected` flag is set once from
-    // getDeviceList()'s "connected" field, which the native Android code
-    // never actually populates for paired devices - so it's always false on
-    // a freshly connected ThermalPrinterDevice, and instance methods throw
-    // "Device not connected" regardless of the real (working) socket state.
-    // The static methods check the real native connection instead.
-    for (const node of nodes) {
-      switch (node.type) {
-        case 'text': {
-          const style = this._convertStyle(node.style);
-          await ReactNativePosPrinter.printText(node.content + '\n', style);
-          break;
+  async printReleaseReceipt(data) {
+    return this.printReceipt(data, 'RELEASE');
+  }
+
+  async printInvoiceReceipt(data) {
+    return this.printReceipt(data, 'INVOICE');
+  }
+
+  async printFinalReceipt(data) {
+    return this.printReceipt(data, 'FINAL');
+  }
+
+  // ============================================================
+  // NODE EXECUTION
+  // ============================================================
+
+  async _printNodes(nodes) {
+    if (!Array.isArray(nodes) || nodes.length === 0) {
+      return;
+    }
+
+    for (let index = 0; index < nodes.length; index++) {
+      const node = nodes[index];
+
+      if (!node) {
+        continue;
+      }
+
+      try {
+        switch (node.type) {
+          // ====================================================
+          // TEXT
+          // ====================================================
+
+          case 'text': {
+            const style = this._convertStyle(node.style);
+            const content = `${node.content || ''}\n`;
+
+            console.log('[PrinterService] TEXT:', {
+              content: node.content,
+              style,
+            });
+
+            await ReactNativePosPrinter.printText(content, style);
+
+            break;
+          }
+
+          // ====================================================
+          // LINE
+          // ====================================================
+
+          case 'line': {
+            const width = await this.getPaperWidth();
+            const character = node.style === 'dashed' ? '-' : '=';
+            const line = character.repeat(width);
+
+            await ReactNativePosPrinter.printText(
+              `${line}\n`,
+              this._normalStyle('LEFT'),
+            );
+
+            break;
+          }
+
+          // ====================================================
+          // QR (see class docstring for why this is image-based)
+          // ====================================================
+
+          case 'qr': {
+            await this._printQRNode(node);
+            break;
+          }
+
+          // ====================================================
+          // FEED
+          // ====================================================
+
+          case 'feed': {
+            const lines = Math.min(Math.max(Number(node.lines) || 3, 1), 10);
+            await ReactNativePosPrinter.newLine(lines);
+            break;
+          }
+
+          // ====================================================
+          // CUT
+          // ====================================================
+
+          case 'cut': {
+            await ReactNativePosPrinter.cutPaper();
+            break;
+          }
+
+          // ====================================================
+          // UNKNOWN
+          // ====================================================
+
+          default:
+            console.warn('[PrinterService] Unsupported receipt node:', node);
         }
-        case 'line': {
-          const width = await this.getPaperWidth();
-          const lineStr = node.style === 'dashed' ? '-'.repeat(width) : '='.repeat(width);
-          await ReactNativePosPrinter.printText(lineStr + '\n');
-          break;
-        }
-        case 'qr': {
-          await ReactNativePosPrinter.printQRCode(node.content, {
-            align: node.align === 'center' ? 'CENTER' : 'LEFT',
-            size: node.size || 4,
-            errorLevel: 'M',
-          });
-          break;
-        }
-        case 'feed': {
-          await ReactNativePosPrinter.newLine(Math.min(node.lines || 3, 10));
-          break;
-        }
-        case 'cut': {
-          await ReactNativePosPrinter.cutPaper();
-          break;
-        }
-        default:
-          console.warn('Unsupported node type:', node.type);
+      } catch (error) {
+        console.error(
+          `[PrinterService] Failed printing node ${index} (${node.type}):`,
+          error,
+        );
+
+        throw error;
       }
     }
   }
 
-  _convertStyle(style = {}) {
-    const alignMap = { left: 'LEFT', center: 'CENTER', right: 'RIGHT' };
-    // IMPORTANT: native printText() does options.getInt('size') - this must
-    // be a plain number (point size). Passing a string like 'NORMAL'/'LARGE'
-    // (which the TS types technically allow) throws on the native bridge
-    // and surfaces as a generic "Failed to print text" error.
-    const sizeMap = { 1: 12, 2: 24, 3: 36 };
+  // ============================================================
+  // QR NODE
+  // ============================================================
 
+  /**
+   * Prints a QR node as an image, with fallbacks so a QR/printer
+   * quirk degrades gracefully instead of aborting the whole receipt.
+   *
+   *   1. Preferred: render a QR bitmap ourselves and printImage() it.
+   *      This is the reliable, generic-ESC/POS path (see class docstring).
+   *   2. Fallback: the library's native printQRCode(), in case a given
+   *      device/library combination can't handle printImage but does
+   *      support the native QR command correctly.
+   *   3. Last resort: print the raw data as wrapped text, so the
+   *      receipt still contains something the customer can act on
+   *      instead of silently dropping the QR section.
+   */
+  async _printQRNode(node) {
+    const qrData = String(node.content ?? '').trim();
+
+    console.log('[PrinterService] QR Node Data:', {
+    length: qrData.length,
+    isDataUrl: qrData.startsWith('data:image/'),
+    isJSON: qrData.startsWith('{') || qrData.startsWith('['),
+    preview: qrData.substring(0, 200),
+    full: qrData,
+  });
+
+    if (!qrData) {
+      console.warn('[PrinterService] QR node has no content.');
+      return;
+    }
+
+    const dotWidth = ReceiptFormatter.getDotWidth();
+
+    // Leave room on either side so the code doesn't touch the paper edge.
+    const maxWidthPx = Math.floor(dotWidth * 0.85);
+
+    // Defensive guard: if something upstream passed an already-rendered
+    // image (a data: URL) instead of raw scannable text - e.g. a screen
+    // that displays the QR as <Image source={{uri: qrCode}}> also being
+    // wired into the print path by mistake - do NOT try to re-encode
+    // that multi-KB base64 string as new QR "content". Attempting to
+    // encode thousands of characters into a QR code exceeds QR capacity
+    // and is exactly what previously caused printers to fall back to
+    // dumping the raw base64 string as a wall of text. Instead, print
+    // the image directly: it's already a valid, correctly-sized picture.
+    const dataUrlMatch = qrData.match(/^data:image\/(png|jpe?g);base64,(.+)$/i);
+
+    if (dataUrlMatch) {
+      console.warn(
+        '[PrinterService] QR node content is a rendered image (data URL), not raw scan data. ' +
+          'Printing the image as-is instead of re-encoding it as a new QR - ' +
+          'check the caller: it should be passing the raw signed QR string (e.g. receiptData.qrCode), ' +
+          'not a rendered/display QR image (e.g. receiptData.qrCodeImage).',
+      );
+
+      try {
+        await ReactNativePosPrinter.printImage(dataUrlMatch[2], {
+          align: 'CENTER',
+          width: maxWidthPx,
+        });
+
+        await ReactNativePosPrinter.newLine(1);
+
+        return;
+      } catch (imagePrintError) {
+        console.warn(
+          '[PrinterService] Printing pre-rendered QR image failed, will attempt to continue with fallbacks:',
+          imagePrintError,
+        );
+        // fall through to the normal encode/print/fallback chain below,
+        // in case the image itself was malformed - the raw text fallback
+        // at the end will at least surface the issue instead of crashing
+        // the whole receipt.
+      }
+    }
+
+    // ---- Primary: render our own bitmap and printImage() it ----
+    // NOTE ON HISTORY: this and native printQRCode below have swapped
+    // priority twice now, based on real evidence from testing against
+    // actual hardware (this codebase can't be run/tested locally, only
+    // reasoned about and simulated against mocks - the actual printer
+    // is the only ground truth that matters here):
+    //   1. Originally bitmap-first, because native printQRCode was
+    //      seen dumping a wall of raw text - turned out to be a
+    //      content bug elsewhere (it was being handed an entire
+    //      rendered PNG data-URL instead of the short signed payload,
+    //      which overflows QR capacity).
+    //   2. After fixing that content bug, switched to native-first,
+    //      reasoning that hardware-native QR rendering avoids any
+    //      image resize/dither degradation printImage() might apply -
+    //      and a bitmap QR (verified independently) printed but failed
+    //      to scan.
+    //   3. Real-world evidence then showed native printQRCode on this
+    //      printer/library resolves successfully as a JS promise while
+    //      producing NO physical output at all - a silent no-op. A
+    //      broken-but-non-throwing native call is worse than one that
+    //      throws (nothing signals the fallback chain to continue), so
+    //      it cannot be trusted as primary. Bitmap-via-printImage is
+    //      back to primary because it's the one path confirmed to
+    //      actually produce visible printed output on this hardware -
+    //      its scannability was then separately hardened (larger
+    //      modules, a scannability floor - see QRCodeGenerator).
+    try {
+      const image = generateQRCodeImage(qrData, {
+        errorCorrectionLevel: node.errorLevel || 'M',
+        moduleScale: Number(node.moduleScale) || 6,
+        minModuleScale: 5,
+        quietZoneModules: 4,
+        maxWidthPx,
+        fullWidthPx: dotWidth,
+      });
+
+      if (!image) {
+        throw new Error('QR bitmap generation returned no image.');
+      }
+
+      console.log('[PrinterService] Printing QR as image:', {
+        length: qrData.length,
+        widthPx: image.widthPx,
+        moduleCount: image.moduleCount,
+        scale: image.scale,
+      });
+
+      await ReactNativePosPrinter.printImage(image.base64, {
+        align: 'CENTER',
+        width: image.widthPx,
+      });
+
+      await ReactNativePosPrinter.newLine(1);
+
+      return;
+    } catch (imageError) {
+      console.warn(
+        '[PrinterService] QR bitmap image print failed, falling back to native printQRCode:',
+        imageError,
+      );
+    }
+
+    // ---- Fallback: native hardware QR command ----
+    // Kept as a fallback (not removed) for other printers/libraries
+    // where this DOES work and may render more cleanly than a
+    // resized bitmap - just not trusted as primary given it silently
+    // no-ops on this project's actual hardware. If printQRCode
+    // resolves without producing output, this fallback is
+    // indistinguishable from success and the receipt will still be
+    // missing its QR - that's a limitation of a native module that
+    // doesn't surface failures, not something detectable from here.
+    try {
+      const qrSize = Math.min(Math.max(Number(node.moduleScale) || 6, 1), 16);
+
+      const qrAlign =
+        node.align === 'center'
+          ? 'CENTER'
+          : node.align === 'right'
+            ? 'RIGHT'
+            : 'LEFT';
+
+      const allowedErrorLevels = ['L', 'M', 'Q', 'H'];
+      const requestedErrorLevel = String(node.errorLevel || 'M').toUpperCase();
+      const errorLevel = allowedErrorLevels.includes(requestedErrorLevel)
+        ? requestedErrorLevel
+        : 'M';
+
+      await ReactNativePosPrinter.printQRCode(qrData, {
+        align: qrAlign,
+        size: qrSize,
+        errorLevel,
+      });
+
+      await ReactNativePosPrinter.newLine(1);
+
+      return;
+    } catch (nativeError) {
+      console.warn(
+        '[PrinterService] Native printQRCode also failed, falling back to text:',
+        nativeError,
+      );
+    }
+
+    // ---- Last resort: raw text, so the receipt isn't silently missing this ----
+    try {
+      const width = await this.getPaperWidth();
+      const wrapped = this._wrapPlainText(qrData, width);
+
+      await ReactNativePosPrinter.printText(
+        `${'(scan unavailable - use link below)'}\n`,
+        this._normalStyle('CENTER'),
+      );
+
+      for (const line of wrapped) {
+        await ReactNativePosPrinter.printText(
+          `${line}\n`,
+          this._normalStyle('CENTER'),
+        );
+      }
+    } catch (textError) {
+      console.error(
+        '[PrinterService] All QR print fallbacks failed:',
+        textError,
+      );
+    }
+  }
+
+  _wrapPlainText(text, width) {
+    const value = String(text ?? '');
+    const lines = [];
+
+    for (let i = 0; i < value.length; i += width) {
+      lines.push(value.substring(i, i + width));
+    }
+
+    return lines.length ? lines : [''];
+  }
+
+  // ============================================================
+  // TEXT STYLE
+  // ============================================================
+
+  _normalStyle(align = 'LEFT') {
     return {
-      align: alignMap[style.align] || 'LEFT',
-      size: sizeMap[style.size] || 12,
-      bold: !!style.bold,
-      underline: !!style.underline,
+      align,
+      size: 8,
+      bold: false,
+      underline: false,
     };
   }
 
-  // ============= Test / diagnostics =============
-  // Minimal, dependency-free raw ESC/POS test page - useful to confirm the
-  // transport itself works independent of ReceiptFormatter/QR.
+  _convertStyle(style = {}) {
+    const alignMap = {
+      left: 'LEFT',
+      center: 'CENTER',
+      right: 'RIGHT',
+    };
+
+    /**
+     * IMPORTANT:
+     * Physical size remains fixed for all receipt text so that
+     * fixed-width formatting remains predictable. Bold is used for
+     * emphasis instead of a larger font.
+     */
+    const sizeMap = {
+      [TEXT_SIZE.NORMAL]: 8,
+      [TEXT_SIZE.EMPHASIZED]: 10,
+    };
+
+    const logicalSize = Number(style.size) || TEXT_SIZE.NORMAL;
+
+    return {
+      align: alignMap[style.align] || 'LEFT',
+      size: sizeMap[logicalSize] || 10,
+      bold: Boolean(style.bold),
+      underline: Boolean(style.underline),
+    };
+  }
+
+  // ============================================================
+  // TEST PRINT
+  // ============================================================
+
   async testPrint() {
     if (!this.isConnected()) {
-      throw new Error('No printer connected');
+      throw new Error('No printer connected.');
     }
-    const bytes = [
-      ...ESCPOSCommands.INIT,
-      ...ESCPOSCommands.ALIGN_CENTER,
-      ...ESCPOSCommands.BOLD_ON,
-      ...'TEST PRINT'.split('').map((c) => c.charCodeAt(0)),
-      ...ESCPOSCommands.LINE_FEED,
-      ...ESCPOSCommands.BOLD_OFF,
-      ...ESCPOSCommands.ALIGN_LEFT,
-      ...'Line 1: Normal text'.split('').map((c) => c.charCodeAt(0)),
-      ...ESCPOSCommands.LINE_FEED,
-      ...ESCPOSCommands.LINE_FEED,
-      ...ESCPOSCommands.LINE_FEED,
-      ...ESCPOSCommands.CUT_PAPER,
-    ];
-    console.log('Sending test print (raw ESC/POS)...');
-    await ReactNativePosPrinter.sendRawCommand(bytes);
-    return { success: true };
-  }
 
-  // Legacy manual-bytes path some UI still calls directly - builds a plain
-  // text receipt without going through ReceiptFormatter, useful as a
-  // last-resort fallback if node-based printing ever misbehaves.
-  async printPureEscPos(receiptData, receiptType) {
-    if (!this.isConnected()) {
-      throw new Error('No printer connected');
-    }
     const width = await this.getPaperWidth();
-    const bytes = [...ESCPOSCommands.INIT];
-    const pushText = (text) => bytes.push(...text.split('').map((c) => c.charCodeAt(0) & 0x7F));
 
-    if (receiptData?.store?.name) {
-      bytes.push(...ESCPOSCommands.ALIGN_CENTER, ...ESCPOSCommands.BOLD_ON);
-      pushText(receiptData.store.name);
-      bytes.push(...ESCPOSCommands.LINE_FEED, ...ESCPOSCommands.BOLD_OFF, ...ESCPOSCommands.ALIGN_LEFT);
-    }
-    bytes.push(...'-'.repeat(width).split('').map((c) => c.charCodeAt(0)), ...ESCPOSCommands.LINE_FEED);
-    pushText(`${receiptType || 'RECEIPT'}`);
-    bytes.push(...ESCPOSCommands.LINE_FEED);
-    if (receiptData?.summary?.totalAmount !== undefined) {
-      pushText(`TOTAL: N${Number(receiptData.summary.totalAmount).toFixed(2)}`);
-      bytes.push(...ESCPOSCommands.LINE_FEED);
-    }
-    bytes.push(...ESCPOSCommands.LINE_FEED, ...ESCPOSCommands.LINE_FEED, ...ESCPOSCommands.LINE_FEED, ...ESCPOSCommands.CUT_PAPER);
+    await ReactNativePosPrinter.printText(
+      `${'='.repeat(width)}\n`,
+      this._normalStyle('LEFT'),
+    );
 
-    await ReactNativePosPrinter.sendRawCommand(bytes);
+    await ReactNativePosPrinter.printText('PRINTER TEST\n', {
+      ...this._normalStyle('CENTER'),
+      bold: true,
+      size: 10,
+    });
+
+    await ReactNativePosPrinter.printText(
+      'Normal text size\n',
+      this._normalStyle('LEFT'),
+    );
+
+    await ReactNativePosPrinter.printText(
+      'This should be normal size.\n',
+      this._normalStyle('LEFT'),
+    );
+
+    await ReactNativePosPrinter.printText(
+      `${'='.repeat(width)}\n`,
+      this._normalStyle('LEFT'),
+    );
+
+    await ReactNativePosPrinter.newLine(3);
+    await ReactNativePosPrinter.cutPaper();
+
     return { success: true };
   }
+
+  /** Isolated QR-only test print, useful for verifying the QR fix on-device. */
+  async testPrintQRCode() {
+    if (!this.isConnected()) {
+      throw new Error('No printer connected.');
+    }
+
+    const paperSize = await this.getPaperSize();
+    ReceiptFormatter.setPaperSize(paperSize);
+
+    await this._printQRNode({
+      content: 'https://example.com/printer-qr-test',
+      align: 'center',
+      errorLevel: 'M',
+      moduleScale: paperSize === '80mm' ? 8 : 6,
+    });
+
+    await ReactNativePosPrinter.newLine(3);
+    await ReactNativePosPrinter.cutPaper();
+
+    return { success: true };
+  }
+
+  // ============================================================
+  // DIAGNOSTIC PRINT
+  // ============================================================
 
   async diagnosticPrint() {
     const results = [];
+
     try {
       await this.testPrint();
       results.push({ method: 'testPrint', success: true });
-    } catch (e) {
-      results.push({ method: 'testPrint', success: false, error: e.message });
+    } catch (error) {
+      results.push({
+        method: 'testPrint',
+        success: false,
+        error: error?.message || String(error),
+      });
     }
+
     try {
-      await this.printReceipt(
-        { store: { name: 'DIAGNOSTIC' }, summary: { totalAmount: 0 } },
-        'SALES',
-      );
-      results.push({ method: 'printReceipt', success: true });
-    } catch (e) {
-      results.push({ method: 'printReceipt', success: false, error: e.message });
+      await this.testPrintQRCode();
+      results.push({ method: 'testPrintQRCode', success: true });
+    } catch (error) {
+      results.push({
+        method: 'testPrintQRCode',
+        success: false,
+        error: error?.message || String(error),
+      });
     }
-    console.log('Diagnostic results:', results);
+
+    try {
+      const diagnosticData = {
+        store: {
+          name: 'DIAGNOSTIC STORE',
+          address: 'Printer Test Address',
+          phone: '08000000000',
+        },
+        transaction: {
+          number: 'TEST-0001',
+          createdAt: new Date(),
+          status: 'COMPLETED',
+        },
+        items: [
+          {
+            name: 'Test Product',
+            quantity: 2,
+            unitPrice: 1500,
+            totalPrice: 3000,
+          },
+        ],
+        summary: {
+          subtotal: 3000,
+          totalAmount: 3000,
+          amountPaid: 5000,
+          changeAmount: 2000,
+        },
+        staff: { salesAttendant: { name: 'Test User' } },
+        qrCode: 'https://example.com/receipt/TEST-0001',
+      };
+
+      await this.printReceipt(diagnosticData, 'SALES');
+
+      results.push({ method: 'formattedReceipt', success: true });
+    } catch (error) {
+      results.push({
+        method: 'formattedReceipt',
+        success: false,
+        error: error?.message || String(error),
+      });
+    }
+
+    console.log('[PrinterService] Diagnostics:', results);
+
     return results;
   }
 }

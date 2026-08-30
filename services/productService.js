@@ -18,6 +18,14 @@ class ProductService {
     return response.data.data;
   }
 
+   /**
+   * Get user's accessible stores
+   */
+  async getUserStores() {
+    const response = await api.get('/products/stores');
+    return response.data.data;
+  }
+
   /**
    * Create product
    */

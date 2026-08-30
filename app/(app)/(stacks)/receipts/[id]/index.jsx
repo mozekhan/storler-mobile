@@ -1,3 +1,4 @@
+// // screens/receipts/[id]/index.jsx (Updated with print functionality)
 // import React, { useEffect, useState } from "react";
 // import {
 //   View,
@@ -33,6 +34,8 @@
 //   Shadows,
 // } from "../../../../../constants/theme";
 // import CustomHeader from "../../../../../components/ui/CustomHeader";
+// import BluetoothPrinterModal from "../../../../../components/print/BluetoothPrinterModal";
+// import { usePrinter } from "../../../../../hooks/usePrinter";
 // import * as FileSystem from 'expo-file-system';
 // import * as Sharing from 'expo-sharing';
 
@@ -47,17 +50,24 @@
 //   const [qrCodeImage, setQrCodeImage] = useState(null);
 //   const [transaction, setTransaction] = useState(null);
 
+//   // Use the printer hook
+//   const {
+//     printerModalVisible,
+//     printReceiptData,
+//     openPrintModal,
+//     closePrintModal,
+//     handlePrintComplete,
+//   } = usePrinter();
+
 //   useEffect(() => {
 //     fetchReceipt();
 //   }, [id]);
 
 //   const fetchReceipt = async () => {
 //     try {
-//       // Get receipt details
 //       const data = await ReceiptService.getReceipt(id);
 //       setReceipt(data);
 
-//       // Handle QR Code
 //       if (data.qrCode) {
 //         if (data.qrCode.startsWith("data:image")) {
 //           setQrCodeImage(data.qrCode);
@@ -68,12 +78,10 @@
 //         }
 //       }
 
-//       // Get receipt data
 //       if (data.receiptData) {
 //         setReceiptData(data.receiptData);
 //       }
 
-//       // Get transaction if available
 //       if (data.transactionId) {
 //         const transactionId = data.transactionId._id || data.transactionId;
 //         if (transactionId) {
@@ -109,7 +117,6 @@
 //     try {
 //       setLoading(true);
       
-//       // Generate receipt PDF
 //       const transactionId = receipt?.transactionId?._id || receipt?.transactionId;
 //       if (transactionId) {
 //         const response = await ReceiptService.generateReceipt(transactionId, receipt.type);
@@ -140,14 +147,58 @@
 //     }
 //   };
 
-//   const handlePrint = async () => {
-//     try {
-//       await ReceiptService.markAsPrinted(id);
-//       Alert.alert("Success", "Receipt marked as printed");
-//       fetchReceipt();
-//     } catch (error) {
-//       Alert.alert("Error", "Failed to mark receipt as printed");
+//   const handlePrint = () => {
+//     const t = transaction || {};
+//     const data = receiptData || {};
+//     const store = data.store || {};
+//     const summary = data.summary || {};
+//     const items = data.items || t.items || [];
+
+//     // Prepare receipt data for printing
+//     const printData = {
+//       store: {
+//         name: store.name || t?.storeId?.name || 'Store',
+//         address: store.address || '',
+//         phone: store.phone || '',
+//         email: store.email || '',
+//       },
+//       transaction: {
+//         number: t?.transactionNumber || 'N/A',
+//         createdAt: t?.createdAt || new Date(),
+//         status: t?.status || 'N/A',
+//       },
+//       items: items.map(item => ({
+//         name: item.name || item.productId?.name || 'Item',
+//         sku: item.sku || item.productId?.sku || '',
+//         quantity: item.quantity || 0,
+//         unitPrice: item.unitPrice || 0,
+//         totalPrice: item.totalPrice || (item.quantity || 0) * (item.unitPrice || 0),
+//         taxAmount: item.taxAmount || 0,
+//       })),
+//       summary: {
+//         subtotal: summary.subtotal || t?.subtotal || 0,
+//         taxTotal: summary.taxTotal || t?.taxTotal || 0,
+//         discountTotal: summary.discountTotal || 0,
+//         totalAmount: summary.totalAmount || t?.totalAmount || 0,
+//         amountPaid: summary.amountPaid || t?.amountPaid || 0,
+//         changeAmount: summary.changeAmount || t?.changeAmount || 0,
+//         paymentMethod: summary.paymentMethod || t?.paymentMethod || '',
+//       },
+//       payment: {
+//         method: t?.paymentMethod || '',
+//         reference: t?.paymentReference || '',
+//       },
+//       invoice: {
+//         number: t?.finalInvoiceNumber || '',
+//       },
+//       qrCode: qrCodeImage,
+//     };
+
+//     if (data.staff) {
+//       printData.staff = data.staff;
 //     }
+
+//     openPrintModal(printData, receipt?.type || 'SALES');
 //   };
 
 //   const getTypeIcon = (type) => {
@@ -590,9 +641,336 @@
 //           <Text style={styles.actionButtonText}>Download</Text>
 //         </TouchableOpacity>
 //       </View>
+
+//       {/* Bluetooth Printer Modal */}
+//       <BluetoothPrinterModal
+//         visible={printerModalVisible}
+//         onClose={closePrintModal}
+//         receiptData={printReceiptData}
+//         receiptType={receipt?.type || 'SALES'}
+//         onPrintComplete={() => {
+//           handlePrintComplete();
+//           fetchReceipt();
+//         }}
+//       />
 //     </View>
 //   );
 // }
+
+// const styles = StyleSheet.create({
+//   container: { flex: 1, backgroundColor: Colors.gray50 },
+//   loadingContainer: {
+//     flex: 1,
+//     justifyContent: "center",
+//     alignItems: "center",
+//     backgroundColor: Colors.white,
+//   },
+//   loadingText: {
+//     marginTop: Spacing.md,
+//     color: Colors.gray500,
+//     fontSize: Typography.md,
+//   },
+//   errorContainer: {
+//     flex: 1,
+//     justifyContent: "center",
+//     alignItems: "center",
+//     backgroundColor: Colors.white,
+//   },
+//   errorText: { fontSize: Typography.lg, color: Colors.gray700 },
+//   closeButton: {
+//     marginTop: Spacing.md,
+//     padding: Spacing.md,
+//     backgroundColor: Colors.primary,
+//     borderRadius: BorderRadius.lg,
+//   },
+//   closeButtonText: { color: Colors.white, fontWeight: "600" },
+//   scrollView: { flex: 1 },
+//   scrollContent: { padding: Spacing.md, paddingBottom: Spacing["4xl"] },
+  
+//   headerCard: {
+//     backgroundColor: Colors.white,
+//     borderRadius: BorderRadius.lg,
+//     padding: Spacing.md,
+//     marginBottom: Spacing.md,
+//     ...Shadows.sm,
+//   },
+//   headerRow: {
+//     flexDirection: "row",
+//     justifyContent: "space-between",
+//     alignItems: "flex-start",
+//   },
+//   headerLeft: { flex: 1 },
+//   headerLabel: { fontSize: Typography.sm, color: Colors.gray500 },
+//   headerNumber: {
+//     fontSize: Typography.xl,
+//     fontWeight: "bold",
+//     color: Colors.gray900,
+//   },
+//   typeContainer: {
+//     flexDirection: "row",
+//     alignItems: "center",
+//     paddingHorizontal: Spacing.sm,
+//     paddingVertical: 4,
+//     borderRadius: BorderRadius.sm,
+//     gap: 4,
+//   },
+//   typeIcon: { fontSize: Typography.md },
+//   typeText: { fontSize: Typography.sm, fontWeight: "600" },
+//   headerMeta: {
+//     flexDirection: "row",
+//     justifyContent: "space-between",
+//     alignItems: "center",
+//     marginTop: Spacing.sm,
+//   },
+//   headerDate: { fontSize: Typography.sm, color: Colors.gray500 },
+//   printedAtText: { fontSize: Typography.xs, color: Colors.gray400, marginTop: 4 },
+//   statusBadge: {
+//     paddingHorizontal: Spacing.sm,
+//     paddingVertical: 2,
+//     borderRadius: BorderRadius.sm,
+//   },
+//   statusText: { fontSize: Typography.xs, fontWeight: "500" },
+//   statusPrinted: { backgroundColor: Colors.success + "20" },
+//   statusPrintedText: { color: Colors.success },
+//   statusNotPrinted: { backgroundColor: Colors.warning + "20" },
+//   statusNotPrintedText: { color: Colors.warning },
+  
+//   detailsCard: {
+//     backgroundColor: Colors.white,
+//     borderRadius: BorderRadius.lg,
+//     padding: Spacing.md,
+//     marginBottom: Spacing.md,
+//     ...Shadows.sm,
+//   },
+//   sectionTitle: {
+//     fontSize: Typography.lg,
+//     fontWeight: "600",
+//     color: Colors.gray900,
+//     marginBottom: Spacing.sm,
+//   },
+//   storeName: {
+//     fontSize: Typography.md,
+//     fontWeight: "600",
+//     color: Colors.gray900,
+//   },
+//   storeDetail: { fontSize: Typography.sm, color: Colors.gray500, marginTop: 2 },
+  
+//   detailRow: {
+//     flexDirection: "row",
+//     justifyContent: "space-between",
+//     paddingVertical: Spacing.xs,
+//     borderBottomWidth: 1,
+//     borderBottomColor: Colors.gray50,
+//   },
+//   detailLabel: { fontSize: Typography.sm, color: Colors.gray600 },
+//   detailValue: {
+//     fontSize: Typography.sm,
+//     fontWeight: "500",
+//     color: Colors.gray900,
+//     flex: 1,
+//     textAlign: "right",
+//   },
+//   statusValue: { color: Colors.primary },
+//   invoiceText: { color: Colors.success },
+  
+//   staffRow: {
+//     flexDirection: "row",
+//     alignItems: "center",
+//     flexWrap: "wrap",
+//     paddingVertical: Spacing.xs,
+//     borderBottomWidth: 1,
+//     borderBottomColor: Colors.gray50,
+//   },
+//   staffRole: {
+//     fontSize: Typography.sm,
+//     color: Colors.gray600,
+//     width: 80,
+//   },
+//   staffName: {
+//     fontSize: Typography.sm,
+//     fontWeight: "500",
+//     color: Colors.gray900,
+//   },
+//   staffEmail: { fontSize: Typography.xs, color: Colors.gray400 },
+  
+//   itemRow: {
+//     flexDirection: "row",
+//     justifyContent: "space-between",
+//     paddingVertical: Spacing.xs,
+//     borderBottomWidth: 1,
+//     borderBottomColor: Colors.gray50,
+//   },
+//   itemInfo: { flex: 1, marginRight: Spacing.sm },
+//   itemName: {
+//     fontSize: Typography.sm,
+//     fontWeight: "500",
+//     color: Colors.gray900,
+//   },
+//   itemDetail: { fontSize: Typography.xs, color: Colors.gray500 },
+//   itemSku: { fontSize: Typography.xs, color: Colors.gray400 },
+//   itemReleasedText: { fontSize: Typography.xs, color: Colors.success },
+//   itemReleasedBy: {
+//     fontSize: Typography.xs,
+//     color: Colors.primary,
+//     marginTop: 1,
+//   },
+//   itemTotal: {
+//     fontSize: Typography.sm,
+//     fontWeight: "600",
+//     color: Colors.gray900,
+//   },
+  
+//   summaryRow: {
+//     flexDirection: "row",
+//     justifyContent: "space-between",
+//     paddingVertical: 2,
+//   },
+//   summaryLabel: { fontSize: Typography.sm, color: Colors.gray600 },
+//   summaryValue: {
+//     fontSize: Typography.sm,
+//     fontWeight: "500",
+//     color: Colors.gray900,
+//   },
+//   discountValue: { color: Colors.success },
+//   changeText: { color: Colors.success },
+//   totalRow: {
+//     borderTopWidth: 1,
+//     borderTopColor: Colors.gray200,
+//     paddingTop: Spacing.sm,
+//     marginTop: Spacing.xs,
+//   },
+//   totalLabel: {
+//     fontSize: Typography.md,
+//     fontWeight: "bold",
+//     color: Colors.gray900,
+//   },
+//   totalValue: {
+//     fontSize: Typography.md,
+//     fontWeight: "bold",
+//     color: Colors.primary,
+//   },
+  
+//   qrCard: {
+//     backgroundColor: Colors.white,
+//     borderRadius: BorderRadius.lg,
+//     padding: Spacing.md,
+//     marginBottom: Spacing.md,
+//     alignItems: "center",
+//     ...Shadows.sm,
+//   },
+//   qrContainer: { alignItems: "center" },
+//   qrImage: {
+//     width: width * 0.4,
+//     height: width * 0.4,
+//     backgroundColor: Colors.white,
+//     borderRadius: BorderRadius.lg,
+//     borderWidth: 1,
+//     borderColor: Colors.gray200,
+//   },
+//   qrHint: {
+//     fontSize: Typography.sm,
+//     color: Colors.gray500,
+//     marginTop: Spacing.sm,
+//   },
+//   qrType: { fontSize: Typography.xs, color: Colors.gray400, marginTop: 1 },
+//   qrPlaceholder: {
+//     width: width * 0.4,
+//     height: width * 0.4,
+//     backgroundColor: Colors.gray100,
+//     borderRadius: BorderRadius.lg,
+//     alignItems: "center",
+//     justifyContent: "center",
+//   },
+//   qrPlaceholderText: {
+//     marginTop: Spacing.sm,
+//     color: Colors.gray500,
+//     fontSize: Typography.sm,
+//   },
+//   regenerateButton: {
+//     marginTop: Spacing.md,
+//     backgroundColor: Colors.primary,
+//     paddingHorizontal: Spacing.md,
+//     paddingVertical: Spacing.sm,
+//     borderRadius: BorderRadius.lg,
+//   },
+//   regenerateButtonText: {
+//     color: Colors.white,
+//     fontWeight: "600",
+//     fontSize: Typography.sm,
+//   },
+  
+//   footerCard: {
+//     backgroundColor: Colors.white,
+//     borderRadius: BorderRadius.lg,
+//     padding: Spacing.md,
+//     alignItems: "center",
+//     ...Shadows.sm,
+//   },
+//   footerText: {
+//     fontSize: Typography.md,
+//     color: Colors.gray600,
+//     textAlign: "center",
+//   },
+  
+//   actionsContainer: {
+//     flexDirection: "row",
+//     padding: Spacing.md,
+//     paddingBottom: Spacing.xl,
+//     backgroundColor: Colors.white,
+//     borderTopWidth: 1,
+//     borderTopColor: Colors.gray200,
+//     gap: Spacing.sm,
+//   },
+//   actionButton: {
+//     flex: 1,
+//     flexDirection: "row",
+//     alignItems: "center",
+//     justifyContent: "center",
+//     paddingVertical: Spacing.md,
+//     borderRadius: BorderRadius.lg,
+//     gap: 4,
+//   },
+//   shareActionButton: { backgroundColor: Colors.primary },
+//   printActionButton: { backgroundColor: Colors.warning },
+//   downloadActionButton: { backgroundColor: Colors.success },
+//   actionButtonText: {
+//     color: Colors.white,
+//     fontWeight: "600",
+//     fontSize: Typography.sm,
+//   },
+// });
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 // screens/receipts/[id]/index.jsx (Updated with print functionality)
 import React, { useEffect, useState } from "react";
@@ -664,14 +1042,18 @@ export default function ReceiptDetail() {
       const data = await ReceiptService.getReceipt(id);
       setReceipt(data);
 
-      if (data.qrCode) {
-        if (data.qrCode.startsWith("data:image")) {
-          setQrCodeImage(data.qrCode);
-        } else if (data.qrCode.length > 100 && !data.qrCode.startsWith("http")) {
-          setQrCodeImage(`data:image/png;base64,${data.qrCode}`);
-        } else {
-          setQrCodeImage(data.qrCode);
-        }
+      // receipt.qrCode is the raw signed payload string (for printing/
+      // scanning validation). receipt.qrCodeImage is the rendered PNG
+      // data-URL (for on-screen display). Use qrCodeImage directly for
+      // display - no need to guess from qrCode's shape/length, which
+      // is fragile and, now that qrCode is always raw text (never an
+      // image), was actively wrong.
+      if (data.qrCodeImage) {
+        setQrCodeImage(data.qrCodeImage);
+      } else if (data.qrCode && data.qrCode.startsWith('data:image')) {
+        // Backward-compat: older Receipt records saved before
+        // qrCodeImage existed may still have the image in qrCode.
+        setQrCodeImage(data.qrCode);
       }
 
       if (data.receiptData) {
@@ -787,7 +1169,7 @@ export default function ReceiptDetail() {
       invoice: {
         number: t?.finalInvoiceNumber || '',
       },
-      qrCode: qrCodeImage,
+      qrCode: receipt?.qrCode || null,
     };
 
     if (data.staff) {

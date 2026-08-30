@@ -164,101 +164,273 @@ export default function BluetoothPrinterModal({
     }
   };
 
-  // const handlePrint = async () => {
-  //   if (!isConnected) {
-  //     Alert.alert('Not Connected', 'Please connect to a printer first');
-  //     return;
-  //   }
+ 
+// const handlePrint = async () => {
+//   if (!isConnected) {
+//     Alert.alert('Not Connected', 'Please connect to a printer first');
+//     return;
+//   }
 
-  //   setIsPrinting(true);
-  //   try {
-  //     let result;
-      
-  //     switch (receiptType) {
-  //       case 'SALES':
-  //         result = await PrinterService.printSalesReceipt(receiptData);
-  //         break;
-  //       case 'PAYMENT':
-  //         result = await PrinterService.printPaymentReceipt(receiptData);
-  //         break;
-  //       case 'RELEASE':
-  //       case 'INVOICE':
-  //         result = await PrinterService.printReleaseReceipt(receiptData);
-  //         break;
-  //       default:
-  //         throw new Error('Unsupported receipt type');
-  //     }
+//   setIsPrinting(true);
+//   try {
+//     let result;
+    
+//     switch (receiptType) {
+//       case 'SALES':
+//         result = await PrinterService.printSalesReceipt(receiptData);
+//         break;
+//       case 'PAYMENT':
+//         result = await PrinterService.printPaymentReceipt(receiptData);
+//         break;
+//       case 'RELEASE':
+//         result = await PrinterService.printReleaseReceipt(receiptData);
+//         break;
+//       case 'INVOICE':
+//         result = await PrinterService.printInvoiceReceipt(receiptData);
+//         break;
+//       case 'FINAL':
+//         result = await PrinterService.printFinalReceipt(receiptData);
+//         break;
+//       default:
+//         // Try to print as sales receipt
+//         result = await PrinterService.printSalesReceipt(receiptData);
+//     }
 
-  //     if (result?.success) {
-  //       Alert.alert('Success', 'Receipt printed successfully');
-  //       if (onPrintComplete) onPrintComplete();
-  //       onClose();
-  //     } else {
-  //       throw new Error('Print returned unsuccessfully');
-  //     }
-  //   } catch (error) {
-  //     console.error('Print error:', error);
-  //     Alert.alert(
-  //       'Print Failed', 
-  //       `${error.message}\\n\\nTry running Diagnostics to test different print methods.`,
-  //       [
-  //         { text: 'OK', style: 'cancel' },
-  //         { text: 'Run Diagnostics', onPress: runDiagnostics },
-  //       ]
-  //     );
-  //   } finally {
-  //     setIsPrinting(false);
-  //   }
-  // };
+//     if (result?.success) {
+//       Alert.alert('Success', 'Receipt printed successfully');
+//       if (onPrintComplete) onPrintComplete();
+//       onClose();
+//     } else {
+//       throw new Error(result?.error || 'Print returned unsuccessfully');
+//     }
+//   } catch (error) {
+//     console.error('Print error:', error);
+//     Alert.alert(
+//       'Print Failed', 
+//       `${error.message || 'Unknown error'}\n\nTry running Diagnostics to test different print methods.`,
+//       [
+//         { text: 'OK', style: 'cancel' },
+//         { text: 'Run Diagnostics', onPress: runDiagnostics },
+//       ]
+//     );
+//   } finally {
+//     setIsPrinting(false);
+//   }
+// };
 
-  // In BluetoothPrinterModal.jsx, update the handlePrint function:
+
+
+
+
+
+
+
+
+
+
+
+
+
+// const handlePrint = async () => {
+//   if (!isConnected) {
+//     Alert.alert('Not Connected', 'Please connect to a printer first');
+//     return;
+//   }
+
+//   setIsPrinting(true);
+//   try {
+//     let result;
+    
+//     // Ensure receiptData has the correct structure
+//     const printData = {
+//       store: receiptData?.store || {},
+//       transaction: receiptData?.transaction || {},
+//       items: receiptData?.items || [],
+//       summary: receiptData?.summary || {},
+//       staff: receiptData?.staff || {},
+//       payment: receiptData?.payment || {},
+//       invoice: receiptData?.invoice || {},
+//       qrCode: receiptData?.qrCode || null,
+//     };
+    
+//     console.log('Printing receipt data:', JSON.stringify(printData, null, 2));
+    
+//     switch (receiptType) {
+//       case 'SALES':
+//         result = await PrinterService.printSalesReceipt(printData);
+//         break;
+//       case 'PAYMENT':
+//         result = await PrinterService.printPaymentReceipt(printData);
+//         break;
+//       case 'RELEASE':
+//         result = await PrinterService.printReleaseReceipt(printData);
+//         break;
+//       case 'INVOICE':
+//         result = await PrinterService.printInvoiceReceipt(printData);
+//         break;
+//       case 'FINAL':
+//         result = await PrinterService.printFinalReceipt(printData);
+//         break;
+//       default:
+//         result = await PrinterService.printSalesReceipt(printData);
+//     }
+
+//     if (result?.success) {
+//       Alert.alert('Success', 'Receipt printed successfully');
+//       if (onPrintComplete) onPrintComplete();
+//       onClose();
+//     } else {
+//       throw new Error(result?.error || 'Print returned unsuccessfully');
+//     }
+//   } catch (error) {
+//     console.error('Print error:', error);
+//     Alert.alert(
+//       'Print Failed', 
+//       `${error.message || 'Unknown error'}\n\nTry running Diagnostics to test different print methods.`,
+//       [
+//         { text: 'OK', style: 'cancel' },
+//         { text: 'Run Diagnostics', onPress: runDiagnostics },
+//       ]
+//     );
+//   } finally {
+//     setIsPrinting(false);
+//   }
+// };
+
+
 const handlePrint = async () => {
   if (!isConnected) {
-    Alert.alert('Not Connected', 'Please connect to a printer first');
+    Alert.alert(
+      'Not Connected',
+      'Please connect to a printer first.',
+    );
+    return;
+  }
+
+  if (isPrinting) {
     return;
   }
 
   setIsPrinting(true);
+
   try {
+    const printData = {
+      store: receiptData?.store || {},
+
+      transaction:
+        receiptData?.transaction || {},
+
+      items:
+        Array.isArray(receiptData?.items)
+          ? receiptData.items
+          : [],
+
+      releasedItems:
+        Array.isArray(
+          receiptData?.releasedItems,
+        )
+          ? receiptData.releasedItems
+          : undefined,
+
+      summary:
+        receiptData?.summary || {},
+
+      staff:
+        receiptData?.staff || {},
+
+      payment:
+        receiptData?.payment || {},
+
+      invoice:
+        receiptData?.invoice || {},
+
+      qrCode:
+        receiptData?.qrCode
+          ? String(receiptData.qrCode)
+          : null,
+    };
+
+    console.log(
+      '[BluetoothPrinterModal] Print request:',
+      {
+        receiptType,
+        hasQR:
+          Boolean(printData.qrCode),
+        itemCount:
+          printData.items.length,
+      },
+    );
+
     let result;
-    
+
     switch (receiptType) {
       case 'SALES':
-        result = await PrinterService.printSalesReceipt(receiptData);
+        result =
+          await PrinterService.printSalesReceipt(
+            printData,
+          );
         break;
+
       case 'PAYMENT':
-        result = await PrinterService.printPaymentReceipt(receiptData);
+        result =
+          await PrinterService.printPaymentReceipt(
+            printData,
+          );
         break;
+
       case 'RELEASE':
-        result = await PrinterService.printReleaseReceipt(receiptData);
+        result =
+          await PrinterService.printReleaseReceipt(
+            printData,
+          );
         break;
+
       case 'INVOICE':
-        result = await PrinterService.printInvoiceReceipt(receiptData);
+        result =
+          await PrinterService.printInvoiceReceipt(
+            printData,
+          );
         break;
+
       case 'FINAL':
-        result = await PrinterService.printFinalReceipt(receiptData);
+        result =
+          await PrinterService.printFinalReceipt(
+            printData,
+          );
         break;
+
       default:
-        // Try to print as sales receipt
-        result = await PrinterService.printSalesReceipt(receiptData);
+        result =
+          await PrinterService.printSalesReceipt(
+            printData,
+          );
     }
 
-    if (result?.success) {
-      Alert.alert('Success', 'Receipt printed successfully');
-      if (onPrintComplete) onPrintComplete();
-      onClose();
-    } else {
-      throw new Error(result?.error || 'Print returned unsuccessfully');
+    if (!result?.success) {
+      throw new Error(
+        result?.error ||
+          'Printer did not report a successful print.',
+      );
     }
-  } catch (error) {
-    console.error('Print error:', error);
+
     Alert.alert(
-      'Print Failed', 
-      `${error.message || 'Unknown error'}\n\nTry running Diagnostics to test different print methods.`,
-      [
-        { text: 'OK', style: 'cancel' },
-        { text: 'Run Diagnostics', onPress: runDiagnostics },
-      ]
+      'Success',
+      'Receipt printed successfully.',
+    );
+
+    onPrintComplete?.();
+
+    onClose?.();
+  } catch (error) {
+    console.error(
+      '[BluetoothPrinterModal] Print failed:',
+      error,
+    );
+
+    Alert.alert(
+      'Print Failed',
+      error?.message ||
+        'Unable to print receipt.',
     );
   } finally {
     setIsPrinting(false);

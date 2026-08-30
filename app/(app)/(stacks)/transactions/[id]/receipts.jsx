@@ -1,4 +1,5 @@
-import React from "react";
+// app/(app)/(stacks)/transactions/[id]/receipts.jsx
+import React, { useState } from "react";
 import {
   View,
   Text,
@@ -7,7 +8,7 @@ import {
   StyleSheet,
 } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { FileText, Eye, Printer, Download } from "lucide-react-native";
+import { FileText, Eye, Printer } from "lucide-react-native";
 import useTransactionStore from "../../../../../stores/transactionStore";
 import { formatDate } from "../../../../../utils/formatters";
 import {
@@ -15,13 +16,86 @@ import {
   Spacing,
   Typography,
   BorderRadius,
+  Shadows,
 } from "../../../../../constants/theme";
 import CustomHeader from "../../../../../components/ui/CustomHeader";
+
+// Custom Alert Modal Component
+const CustomAlertModal = ({ visible, title, message, buttons, onClose }) => {
+  return (
+    <Modal visible={visible} transparent={true} animationType="fade">
+      <View style={styles.alertOverlay}>
+        <View style={styles.alertContainer}>
+          <View style={styles.alertHeader}>
+            <Text style={styles.alertTitle}>{title}</Text>
+            <TouchableOpacity onPress={onClose} style={styles.alertCloseButton}>
+              <XCircle size={20} color={Colors.gray400} />
+            </TouchableOpacity>
+          </View>
+          <View style={styles.alertBody}>
+            <Text style={styles.alertMessage}>{message}</Text>
+          </View>
+          <View style={styles.alertFooter}>
+            {buttons && buttons.map((btn, index) => (
+              <TouchableOpacity
+                key={index}
+                style={[
+                  styles.alertButton,
+                  btn.style === 'cancel' ? styles.alertCancelButton : styles.alertPrimaryButton,
+                  index > 0 && styles.alertButtonMargin
+                ]}
+                onPress={() => {
+                  if (btn.onPress) btn.onPress();
+                  onClose();
+                }}
+              >
+                <Text style={btn.style === 'cancel' ? styles.alertCancelText : styles.alertPrimaryText}>
+                  {btn.text}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+};
 
 export default function TransactionReceipts() {
   const { id } = useLocalSearchParams();
   const router = useRouter();
   const { currentTransaction } = useTransactionStore();
+  const [alertModal, setAlertModal] = useState({
+    visible: false,
+    title: "",
+    message: "",
+    buttons: [],
+    onClose: null,
+  });
+
+  const showAlert = (title, message, buttons = [{ text: "OK" }]) => {
+    return new Promise((resolve) => {
+      const wrappedButtons = buttons.map(btn => ({
+        ...btn,
+        onPress: () => {
+          if (btn.onPress) btn.onPress();
+          resolve();
+        }
+      }));
+      setAlertModal({
+        visible: true,
+        title,
+        message,
+        buttons: wrappedButtons,
+        onClose: resolve,
+      });
+    });
+  };
+
+  const closeAlert = () => {
+    setAlertModal(prev => ({ ...prev, visible: false }));
+    if (alertModal.onClose) alertModal.onClose();
+  };
 
   if (!currentTransaction || currentTransaction._id !== id) {
     return (
@@ -50,13 +124,14 @@ export default function TransactionReceipts() {
   }
   
   // Payment Receipt
-  if (receiptData.summary?.paymentMethod && receiptData.summary?.paymentMethod !== "N/A") {
+  const paymentMethod = receiptData.summary?.paymentMethod || currentTransaction.paymentMethod;
+  if (paymentMethod && paymentMethod !== "N/A") {
     receipts.push({
       _id: `${currentTransaction._id}-payment`,
       receiptNumber: `${currentTransaction.transactionNumber || "PAYMENT"}-001`,
       type: "PAYMENT",
       printed: currentTransaction.paymentReceiptPrinted || false,
-      createdAt: receiptData.generatedAt || currentTransaction.updatedAt,
+      createdAt: receiptData.generatedAt || currentTransaction.updatedAt || currentTransaction.paymentTimestamp,
       data: receiptData,
       icon: "💰",
     });
@@ -69,7 +144,7 @@ export default function TransactionReceipts() {
       receiptNumber: `${currentTransaction.transactionNumber || "INVOICE"}-001`,
       type: "INVOICE",
       printed: currentTransaction.finalInvoicePrinted || false,
-      createdAt: currentTransaction.updatedAt,
+      createdAt: currentTransaction.updatedAt || currentTransaction.completedAt,
       data: receiptData,
       icon: "📋",
     });
@@ -85,13 +160,11 @@ export default function TransactionReceipts() {
   };
 
   const viewReceipt = (receipt) => {
-    // Navigate to receipt detail or open modal
-    router.push(`/receipts/[id]/${receipt._id}`);
+    router.push(`/receipts/${receipt._id}`);
   };
 
-  const printReceipt = (receipt) => {
-    // Implement print functionality
-    Alert.alert("Print", `Printing ${receipt.type} receipt...`);
+  const printReceipt = async (receipt) => {
+    await showAlert("Print", `Printing ${receipt.type} receipt...`);
   };
 
   if (receipts.length === 0) {
@@ -165,9 +238,20 @@ export default function TransactionReceipts() {
           </View>
         )}
       />
+      <CustomAlertModal
+        visible={alertModal.visible}
+        title={alertModal.title}
+        message={alertModal.message}
+        buttons={alertModal.buttons}
+        onClose={closeAlert}
+      />
     </View>
   );
 }
+
+// Import Modal and XCircle at the top
+import { Modal } from "react-native";
+import { XCircle } from "lucide-react-native";
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.gray50 },
@@ -227,6 +311,82 @@ const styles = StyleSheet.create({
     color: Colors.gray400,
     marginTop: Spacing.xs,
     textAlign: "center",
+    fontSize: Typography.sm,
+  },
+  // Alert Modal Styles
+  alertOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.5)",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: Spacing["2xl"],
+  },
+  alertContainer: {
+    backgroundColor: Colors.white,
+    borderRadius: BorderRadius["2xl"],
+    width: "100%",
+    maxWidth: 380,
+    ...Shadows.lg,
+    overflow: "hidden",
+  },
+  alertHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    padding: Spacing.lg,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.gray100,
+  },
+  alertTitle: {
+    fontSize: Typography.lg,
+    fontWeight: "bold",
+    color: Colors.gray900,
+    flex: 1,
+  },
+  alertCloseButton: {
+    padding: Spacing.xs,
+  },
+  alertBody: {
+    padding: Spacing.lg,
+    paddingVertical: Spacing["2xl"],
+  },
+  alertMessage: {
+    fontSize: Typography.md,
+    color: Colors.gray700,
+    lineHeight: 24,
+    textAlign: "center",
+  },
+  alertFooter: {
+    flexDirection: "row",
+    padding: Spacing.md,
+    borderTopWidth: 1,
+    borderTopColor: Colors.gray100,
+    justifyContent: "flex-end",
+  },
+  alertButton: {
+    paddingVertical: Spacing.sm,
+    paddingHorizontal: Spacing["2xl"],
+    borderRadius: BorderRadius.lg,
+    minWidth: 80,
+    alignItems: "center",
+  },
+  alertButtonMargin: {
+    marginLeft: Spacing.sm,
+  },
+  alertPrimaryButton: {
+    backgroundColor: Colors.primary,
+  },
+  alertCancelButton: {
+    backgroundColor: Colors.gray200,
+  },
+  alertPrimaryText: {
+    color: Colors.white,
+    fontWeight: "600",
+    fontSize: Typography.sm,
+  },
+  alertCancelText: {
+    color: Colors.gray700,
+    fontWeight: "600",
     fontSize: Typography.sm,
   },
 });
